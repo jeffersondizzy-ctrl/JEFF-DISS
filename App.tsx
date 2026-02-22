@@ -5,7 +5,7 @@
 */
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { AppState, LogisticsEntry, AppData, OperationStatus, ChatMessage, CriticalAlert, UnitTab, Notification, UserAccount, VehicleType, LoadingPosition } from './types';
+import { AppState, LogisticsEntry, AppData, OperationStatus, ChatMessage, CriticalAlert, UnitTab, Notification, UserAccount, VehicleType, LoadingPosition, Announcement, Recado } from './types';
 import LogisticsForm from './components/LogisticsForm';
 import HistoryTable from './components/HistoryTable';
 import DashboardStats from './components/DashboardStats';
@@ -82,173 +82,179 @@ const App: React.FC = () => {
   const socketRef = useRef<Socket | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLDivElement>(null);
+  const isRemoteUpdate = useRef(false);
+  const [allUsers, setAllUsers] = useState<UserAccount[]>([]);
+  const [notesData, setNotesData] = useState<Record<string, UserNote[]>>({});
+  const [reviewsData, setReviewsData] = useState<any[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
     const sessionUser = sessionStorage.getItem('active_session_user');
     const sessionUnit = sessionStorage.getItem('active_session_unit');
     
-    let currentData: AppData = { 
-      entries: [], 
-      iscaControlEntries: [], 
-      messages: [], 
-      notifications: [],
-      unitTabs: [],
-      lastAuthor: '', 
-      nextProtocol: 1,
-      announcements: [],
-      recados: []
-    };
-
-    if (saved) {
-      try { 
-        const parsed = JSON.parse(saved);
-        currentData = {
-          ...parsed,
-          entries: parsed.entries || [],
-          iscaControlEntries: parsed.iscaControlEntries || [],
-          messages: parsed.messages || [],
-          notifications: parsed.notifications || [],
-          unitTabs: parsed.unitTabs || [],
-          announcements: parsed.announcements || [],
-          recados: parsed.recados || []
-        };
-      } catch (e) { console.error(e); }
-    }
-
-    if (currentData.entries.length === 0) {
-      const demoEntry: LogisticsEntry = {
-        id: 'demo-protocol-platinum',
-        protocol: 1000,
-        timestamp: new Date().toISOString(),
-        author: 'SISTEMA',
-        responsavelPreAlerta: 'DEMONSTRAÇÃO',
-        motorista: 'JOSE ALVES (CONDUTOR EXEMPLO)',
-        placaCavalo: 'BRA2E26',
-        placaVeiculo: ['BAU-3C00'],
-        numIsca: ['R100002345', 'R100000879'],
-        numNF: ['455601'],
-        uma: ['UMA-332'],
-        codigoProduto: ['SKU-1022'],
-        iscaPertencente: ['Araçariguama-SP', 'Araçariguama-SP'],
-        iscaStatuses: [OperationStatus.ROTA_IDA, OperationStatus.ROTA_IDA],
-        origem: 'Santa Luzia-MG',
-        destino: 'Guarulhos-SP',
-        tipoVeiculo: VehicleType.BAU,
-        status: OperationStatus.ROTA_IDA,
-        observacoes: 'PROTOCOLO DE DEMONSTRAÇÃO GERADO PARA VALIDAÇÃO DE FLUXO SANTA LUZIA -> GUARULHOS.',
-        embarqueIsca: [LoadingPosition.SUPERIOR_DIREITO, LoadingPosition.SUPERIOR_ESQUERDO],
-        embarqueObservacoes: ['EMBARQUE OK', 'EMBARQUE OK'],
-        unitId: 'demo-unit'
-      };
-      currentData.entries = [demoEntry];
-      currentData.nextProtocol = 1001;
-      
-      if (currentData.unitTabs.length === 0) {
-        currentData.unitTabs = [
-          { id: 'unit-slz', name: 'Santa Luzia-MG', password: '123', createdAt: new Date().toISOString() },
-          { id: 'unit-gru', name: 'Guarulhos-SP', password: '123', createdAt: new Date().toISOString() },
-          { id: 'unit-arc', name: 'Araçariguama-SP', password: '123', createdAt: new Date().toISOString() }
-        ];
-      }
-    }
-
-    setData(currentData);
-
     if (sessionUser && sessionUnit) {
       setCurrentUser(sessionUser);
       setCurrentUserUnit(sessionUnit);
       setIsAuthenticated(true);
-      
-      const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
-      if (usersSaved) {
-        const list = JSON.parse(usersSaved);
-        const current = list.find((u: any) => u.username.toUpperCase() === sessionUser.toUpperCase());
-        if (current) {
-          setUserProfile(current);
-        }
-      }
     }
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated && currentUserUnit) {
-      // Initialize socket connection
-      const socket = io();
-      socketRef.current = socket;
+    // Initialize socket connection
+    const socket = io();
+    socketRef.current = socket;
 
-      socket.on('connect', () => {
-        console.log('Connected to server');
+    socket.on('connect', () => {
+      console.log('Connected to server');
+      if (currentUserUnit) {
         socket.emit('join_unit', currentUserUnit);
-        if (userProfile.units) {
-          userProfile.units.forEach((u: string) => socket.emit('join_unit', u));
+      }
+    });
+
+    socket.on('initial_data', ({ appData, usersData, notesData, reviewsData }: { appData: AppData, usersData: UserAccount[], notesData: Record<string, UserNote[]>, reviewsData: any[] }) => {
+      isRemoteUpdate.current = true;
+      setData(appData);
+      setAllUsers(usersData);
+      setNotesData(notesData);
+      setReviewsData(reviewsData);
+      
+      // Update current user profile if logged in
+      if (currentUser) {
+        const current = usersData.find(u => u.username.toUpperCase() === currentUser.toUpperCase());
+        if (current) {
+          setUserProfile(current);
         }
-      });
+      }
+      
+      setTimeout(() => {
+        isRemoteUpdate.current = false;
+      }, 100);
+    });
 
-      socket.on('receive_message', (message: ChatMessage) => {
-        setData(prev => {
-          // Avoid duplicate messages if they already exist in local state
-          if (prev.messages.some(m => m.id === message.id)) return prev;
-          return {
-            ...prev,
-            messages: [...prev.messages, message]
-          };
-        });
-      });
+    socket.on('app_data_updated', (newData: AppData) => {
+      isRemoteUpdate.current = true;
+      setData(newData);
+      setTimeout(() => {
+        isRemoteUpdate.current = false;
+      }, 100);
+    });
 
-      socket.on('receive_notification', (notification: Notification) => {
-        setData(prev => {
-          if (prev.notifications.some(n => n.id === notification.id)) return prev;
-          return {
-            ...prev,
-            notifications: [notification, ...prev.notifications]
-          };
-        });
-      });
+    socket.on('users_data_updated', (newUsers: UserAccount[]) => {
+      setAllUsers(newUsers);
+      if (currentUser) {
+        const current = newUsers.find(u => u.username.toUpperCase() === currentUser.toUpperCase());
+        if (current) {
+          setUserProfile(current);
+        }
+      }
+    });
 
-      socket.on('receive_announcement', (announcement: Announcement) => {
-        setData(prev => {
-          if (prev.announcements.some(a => a.id === announcement.id)) return prev;
-          return {
-            ...prev,
-            announcements: [announcement, ...prev.announcements]
-          };
-        });
-      });
+    socket.on('notes_data_updated', (newNotes: Record<string, UserNote[]>) => {
+      setNotesData(newNotes);
+    });
 
-      socket.on('receive_recado', (recado: Recado) => {
-        setData(prev => {
-          if (prev.recados.some(r => r.id === recado.id)) return prev;
-          return {
-            ...prev,
-            recados: [recado, ...prev.recados]
-          };
-        });
-      });
+    socket.on('reviews_data_updated', (newReviews: any[]) => {
+      setReviewsData(newReviews);
+    });
 
-      socket.on('receive_recado_response', (data: any) => {
-        setData(prev => ({
+    socket.on('receive_message', (message: ChatMessage) => {
+      setData(prev => {
+        if (prev.messages.some(m => m.id === message.id)) return prev;
+        return {
           ...prev,
-          recados: prev.recados.map(r => r.id === data.recadoId ? {
-            ...r,
-            status: 'responded',
-            response: data.response,
-            respondedBy: data.respondedBy,
-            respondedAt: data.respondedAt
-          } : r)
-        }));
+          messages: [...prev.messages, message]
+        };
       });
+    });
 
-      return () => {
-        socket.disconnect();
-        socketRef.current = null;
-      };
+    socket.on('receive_notification', (notification: Notification) => {
+      setData(prev => {
+        if (prev.notifications.some(n => n.id === notification.id)) return prev;
+        return {
+          ...prev,
+          notifications: [notification, ...prev.notifications]
+        };
+      });
+    });
+
+    socket.on('receive_announcement', (announcement: Announcement) => {
+      setData(prev => {
+        if (prev.announcements.some(a => a.id === announcement.id)) return prev;
+        return {
+          ...prev,
+          announcements: [announcement, ...prev.announcements]
+        };
+      });
+    });
+
+    socket.on('receive_recado', (recado: Recado) => {
+      setData(prev => {
+        if (prev.recados.some(r => r.id === recado.id)) return prev;
+        return {
+          ...prev,
+          recados: [recado, ...prev.recados]
+        };
+      });
+    });
+
+    socket.on('receive_recado_response', (data: any) => {
+      setData(prev => ({
+        ...prev,
+        recados: prev.recados.map(r => r.id === data.recadoId ? {
+          ...r,
+          status: 'responded',
+          response: data.response,
+          respondedBy: data.respondedBy,
+          respondedAt: data.respondedAt
+        } : r)
+      }));
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (isAuthenticated && currentUserUnit && socketRef.current) {
+      socketRef.current.emit('join_unit', currentUserUnit);
+      if (userProfile.units) {
+        userProfile.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
+      }
     }
-  }, [isAuthenticated, currentUserUnit, userProfile]);
+  }, [isAuthenticated, currentUserUnit, userProfile.units]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (!isRemoteUpdate.current && socketRef.current) {
+      socketRef.current.emit('update_app_data', data);
+    }
   }, [data]);
+
+  useEffect(() => {
+    if (allUsers.length > 0) {
+      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(allUsers));
+      if (!isRemoteUpdate.current && socketRef.current) {
+        socketRef.current.emit('update_users_data', allUsers);
+      }
+    }
+  }, [allUsers]);
+
+  useEffect(() => {
+    if (Object.keys(notesData).length > 0) {
+      if (!isRemoteUpdate.current && socketRef.current) {
+        socketRef.current.emit('update_notes_data', notesData);
+      }
+    }
+  }, [notesData]);
+
+  useEffect(() => {
+    if (reviewsData.length > 0) {
+      if (!isRemoteUpdate.current && socketRef.current) {
+        socketRef.current.emit('update_reviews_data', reviewsData);
+      }
+    }
+  }, [reviewsData]);
 
   // Cleanup notifications older than 24 hours
   useEffect(() => {
@@ -281,16 +287,12 @@ const App: React.FC = () => {
     sessionStorage.setItem('active_session_user', user.toUpperCase());
     sessionStorage.setItem('active_session_unit', unit);
     
-    const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
-    if (usersSaved) {
-      const list = JSON.parse(usersSaved);
-      const current = list.find((u: any) => u.username.toUpperCase() === user.toUpperCase());
-      if (current) {
-        setUserProfile(current);
-        // Join all user units in socket
-        if (socketRef.current && current.units) {
-          current.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
-        }
+    const current = allUsers.find((u: any) => u.username.toUpperCase() === user.toUpperCase());
+    if (current) {
+      setUserProfile(current);
+      // Join all user units in socket
+      if (socketRef.current && current.units) {
+        current.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
       }
     }
   };
@@ -537,8 +539,6 @@ const App: React.FC = () => {
     }
   };
 
-  const allUsers: UserAccount[] = JSON.parse(localStorage.getItem(STORAGE_USERS_KEY) || '[]');
-
   const handleDeleteUnitTab = (id: string) => {
     setData(prev => ({
       ...prev,
@@ -603,7 +603,13 @@ const App: React.FC = () => {
   );
 
   if (!isAuthenticated) {
-    return <LoginScreen onLogin={handleLogin} />;
+    return (
+      <LoginScreen 
+        onLogin={handleLogin} 
+        allUsers={allUsers} 
+        onSignup={(newUser) => setAllUsers(prev => [...prev, newUser])} 
+      />
+    );
   }
 
   return (
@@ -787,8 +793,26 @@ const App: React.FC = () => {
             />
           )}
           {expandedSection === 'stats' && <DashboardStats entries={data.entries} unitTabs={data.unitTabs} onAddUnitTab={handleAddUnitTab} />}
-          {expandedSection === 'notes' && <NotesModule currentUser={currentUser} />}
-          {expandedSection === 'agents' && <AgentsModule currentUser={currentUser} />}
+          {expandedSection === 'notes' && (
+            <NotesModule 
+              currentUser={currentUser} 
+              notes={notesData[currentUser.toUpperCase()] || []}
+              onUpdateNotes={(updatedNotes) => {
+                setNotesData(prev => ({
+                  ...prev,
+                  [currentUser.toUpperCase()]: updatedNotes
+                }));
+              }}
+            />
+          )}
+          {expandedSection === 'agents' && (
+            <AgentsModule 
+              currentUser={currentUser} 
+              agents={allUsers}
+              reviews={reviewsData}
+              onUpdateReviews={setReviewsData}
+            />
+          )}
           {expandedSection === 'founder' && <FounderSection />}
           {expandedSection === 'settings' && (
             <SettingsModule 
@@ -797,6 +821,8 @@ const App: React.FC = () => {
               unitTabs={data.unitTabs}
               onUpdateUnitTab={handleUpdateUnitTab}
               onDeleteUnitTab={handleDeleteUnitTab}
+              allUsers={allUsers}
+              onUpdateAllUsers={setAllUsers}
             />
           )}
         </div>

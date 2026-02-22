@@ -11,12 +11,14 @@ import { CityDropdown } from './LogisticsForm';
 
 interface LoginScreenProps {
   onLogin: (user: string, unit: string) => void;
+  allUsers: UserAccount[];
+  onSignup: (newUser: UserAccount) => void;
 }
 
 const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
 const MASTER_SECURITY_KEY = 'Gerenciamento*@2026';
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   const [login, setLogin] = useState('');
   const [signupUnits, setSignupUnits] = useState<City[]>(['' as City]);
@@ -48,32 +50,18 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     setVisuals({ grains, clouds });
   }, []);
 
-  const getUsers = (): UserAccount[] => {
-    const saved = localStorage.getItem(STORAGE_USERS_KEY);
-    if (!saved) {
-      return [{ username: 'ADMIN', units: ['Viana-ES'], personalPassword: 'admin' }];
-    }
-    const parsed = JSON.parse(saved);
-    return parsed.map((u: any) => ({
-      ...u,
-      units: u.units || [u.unit]
-    }));
-  };
-
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     setTimeout(() => {
-      const users = getUsers();
-      const user = users.find(u => 
+      const user = allUsers.find(u => 
         u.username.toUpperCase() === login.toUpperCase() && 
         u.personalPassword === password
       );
 
       if (user) {
-        // Agora faz login direto usando a primeira unidade como contexto inicial
         onLogin(user.username, user.units[0]);
       } else {
         setError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
@@ -108,10 +96,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     }
 
     setTimeout(() => {
-      const users = getUsers();
       const normalizedUsername = login.toUpperCase().trim();
       
-      if (users.some(u => u.username.toUpperCase() === normalizedUsername)) {
+      if (allUsers.some(u => u.username.toUpperCase() === normalizedUsername)) {
         setError('ERRO: ESTE AGENTE JÁ ESTÁ CADASTRADO');
         setLoading(false);
         return;
@@ -123,8 +110,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         personalPassword: password 
       };
       
-      const updatedUsers = [...users, newUser];
-      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(updatedUsers));
+      onSignup(newUser);
       
       setLoading(false);
       setActiveTab('login');
