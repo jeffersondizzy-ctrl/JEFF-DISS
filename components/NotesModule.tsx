@@ -9,29 +9,44 @@ import { NoteIcon, PlusIcon, TrashIcon, SparklesIcon, XMarkIcon } from './icons'
 
 interface NotesModuleProps {
   currentUser: string;
-  notes: UserNote[];
-  onUpdateNotes: (notes: UserNote[]) => void;
 }
 
 const STORAGE_NOTES_PREFIX = 'pre_alerta_gr_notes_v1_';
 
-const NotesModule: React.FC<NotesModuleProps> = ({ currentUser, notes, onUpdateNotes }) => {
+const NotesModule: React.FC<NotesModuleProps> = ({ currentUser }) => {
+  const [notes, setNotes] = useState<UserNote[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   
   // Use ReturnType<typeof setTimeout> to avoid Namespace 'global.NodeJS' has no exported member 'Timeout' error
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    const savedNotes = localStorage.getItem(`${STORAGE_NOTES_PREFIX}${currentUser.toUpperCase()}`);
+    if (savedNotes) {
+      try {
+        setNotes(JSON.parse(savedNotes));
+      } catch (e) {
+        console.error("Error loading notes", e);
+      }
+    }
+  }, [currentUser]);
+
+  const saveToStorage = (updatedNotes: UserNote[]) => {
+    localStorage.setItem(`${STORAGE_NOTES_PREFIX}${currentUser.toUpperCase()}`, JSON.stringify(updatedNotes));
+    setIsSaving(false);
+  };
+
   const handleUpdateNoteText = (id: string, text: string) => {
     const now = new Date().toISOString();
     const updatedNotes = notes.map(n => n.id === id ? { ...n, text, lastUpdated: now } : n);
+    setNotes(updatedNotes);
     
     // Auto-save with debounce
     setIsSaving(true);
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      onUpdateNotes(updatedNotes);
-      setIsSaving(false);
+      saveToStorage(updatedNotes);
     }, 1500);
   };
 
@@ -44,15 +59,17 @@ const NotesModule: React.FC<NotesModuleProps> = ({ currentUser, notes, onUpdateN
       lastUpdated: now
     };
     const updatedNotes = [newNote, ...notes];
+    setNotes(updatedNotes);
     setActiveNoteId(newNote.id);
-    onUpdateNotes(updatedNotes);
+    saveToStorage(updatedNotes);
   };
 
   const deleteNote = (id: string) => {
     if (window.confirm("Deseja excluir esta anotação permanentemente?")) {
       const updatedNotes = notes.filter(n => n.id !== id);
+      setNotes(updatedNotes);
       if (activeNoteId === id) setActiveNoteId(null);
-      onUpdateNotes(updatedNotes);
+      saveToStorage(updatedNotes);
     }
   };
 
