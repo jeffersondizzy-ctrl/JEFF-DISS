@@ -1,0 +1,10 @@
+{
+  "name": "Remix: Pré Alerta GR - Sistema Oficial Café Três Corações",
+  "description": "Plataforma avançada de Gerenciamento de Riscos Logísticos e Monitoramento de Iscas.",
+  "requestFramePermissions": [
+    "geolocation",
+    "camera",
+    "microphone"
+  ],
+  "prompt": "Sistema de monitoramento logístico com interface futurista, alertas em tempo real e análise neural de dados."
+}
