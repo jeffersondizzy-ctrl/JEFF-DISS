@@ -602,7 +602,7 @@ const App: React.FC = () => {
         >
           <Icon className="w-6 h-6 md:w-10 md:h-10 filter drop-shadow-[0_0_8px_currentColor]" />
         </div>
-        <span className="text-[8px] md:text-[11px] font-black uppercase tracking-[0.2em] md:tracking-[0.4em] text-center leading-tight font-mono" style={{ color: color }}>
+        <span className="text-[8px] md:text-[11px] font-black tracking-[0.2em] md:tracking-[0.4em] text-center leading-tight font-mono" style={{ color: color }}>
           {label}
         </span>
       </button>
@@ -714,11 +714,11 @@ const App: React.FC = () => {
         {expandedSection === 'none' && (
           <div className="animate-in fade-in zoom-in-95 duration-1000 relative">
             <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-11 gap-3 md:gap-6">
-              <NavIcon type="new" label="ENVIO DO PRE ALERTA" icon={PlusIcon} color="#C0955C" />
-              <NavIcon type="isca_control" label="CONTROLE DE ISCAS" icon={SparklesIcon} color="#C0955C" />
-              <NavIcon type="pre_alerts" label="HISTÓRICO PRÉ ALERTA" icon={ClipboardIcon} color="#C0955C" />
+              <NavIcon type="new" label="Envio do Pré Alerta" icon={PlusIcon} color="#C0955C" />
+              <NavIcon type="isca_control" label="Controle de Iscas" icon={SparklesIcon} color="#C0955C" />
+              <NavIcon type="pre_alerts" label="Historico de pre alertas" icon={ClipboardIcon} color="#C0955C" />
               <NavIcon type="chat" label="Chat" icon={MessageSquareIcon} color="#64ffda" />
-              <NavIcon type="billing" label="COBRANÇAS" icon={AlertIcon} color="#ef4444" />
+              <NavIcon type="billing" label="Cobranças" icon={AlertIcon} color="#ef4444" />
               <NavIcon type="announcements" label="Comunicados" icon={MailIcon} color="#C0955C" />
               <NavIcon type="stats" label="Dados" icon={SlidersHorizontalIcon} color="#C0955C" />
               <NavIcon type="agents" label="Agentes" icon={UsersIcon} color="#C0955C" />
