@@ -16,6 +16,9 @@ interface SettingsModuleProps {
   onDeleteUnitTab: (id: string) => void;
   allUsers: UserAccount[];
   onUpdateAllUsers: (users: UserAccount[]) => void;
+  onProfileSave: (updates: Partial<UserAccount>) => void;
+  onDeleteUser: (username: string) => void;
+  onSaveEditedUser: (username: string, updates: Partial<UserAccount>) => void;
 }
 
 const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
@@ -24,7 +27,18 @@ const MASTER_SECURITY_KEY = 'Gerenciamento*@2026';
 const inputStyle = "w-full bg-black/40 border border-roasted-gold/20 rounded-xl px-5 py-4 text-sm focus:border-roasted-gold outline-none transition-all placeholder:text-white/10 text-white font-bold uppercase tracking-wider";
 const labelStyle = "text-[10px] font-black text-roasted-gold uppercase tracking-[0.2em] mb-2 block ml-1 opacity-70";
 
-const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCurrentUser, unitTabs, onUpdateUnitTab, onDeleteUnitTab, allUsers, onUpdateAllUsers }) => {
+const SettingsModule: React.FC<SettingsModuleProps> = ({ 
+  currentUser, 
+  onUpdateCurrentUser, 
+  unitTabs, 
+  onUpdateUnitTab, 
+  onDeleteUnitTab, 
+  allUsers, 
+  onUpdateAllUsers,
+  onProfileSave,
+  onDeleteUser,
+  onSaveEditedUser
+}) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'admin'>('profile');
   const [adminAuth, setAdminAuth] = useState(false);
   const [masterKey, setMasterKey] = useState('');
@@ -46,11 +60,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCu
 
   const handleProfileSave = (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedUsers = allUsers.map(u => 
-      u.username.toUpperCase() === currentUser.toUpperCase() ? { ...u, ...profileData } : u
-    );
-    onUpdateAllUsers(updatedUsers);
-    onUpdateCurrentUser(profileData);
+    onProfileSave(profileData);
     alert("PERFIL ATUALIZADO COM SUCESSO.");
   };
 
@@ -81,8 +91,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCu
        return;
     }
     if (window.confirm(`DESEJA REALMENTE EXCLUIR O AGENTE ${username}? ESTA AÇÃO É IRREVERSÍVEL.`)) {
-      const updated = allUsers.filter(u => u.username !== username);
-      onUpdateAllUsers(updated);
+      onDeleteUser(username);
     }
   };
 
@@ -94,8 +103,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCu
   const saveEditedUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
-    const updated = allUsers.map(u => u.username === originalUsername ? editingUser : u);
-    onUpdateAllUsers(updated);
+    onSaveEditedUser(originalUsername, editingUser);
     setEditingUser(null);
     setOriginalUsername('');
     alert("DADOS DO AGENTE ATUALIZADOS.");

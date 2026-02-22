@@ -105,94 +105,131 @@ const App: React.FC = () => {
 
     socket.on('connect', () => {
       console.log('Connected to server');
+      socket.emit('request_initial_data');
       if (currentUserUnit) {
         socket.emit('join_unit', currentUserUnit);
       }
     });
 
     socket.on('initial_data', ({ appData, usersData, notesData, reviewsData }: { appData: AppData, usersData: UserAccount[], notesData: Record<string, UserNote[]>, reviewsData: any[] }) => {
-      isRemoteUpdate.current = true;
       setData(appData);
       setAllUsers(usersData);
       setNotesData(notesData);
       setReviewsData(reviewsData);
       
-      // Update current user profile if logged in
       if (currentUser) {
         const current = usersData.find(u => u.username.toUpperCase() === currentUser.toUpperCase());
-        if (current) {
-          setUserProfile(current);
-        }
+        if (current) setUserProfile(current);
       }
-      
-      setTimeout(() => {
-        isRemoteUpdate.current = false;
-      }, 100);
     });
 
-    socket.on('app_data_updated', (newData: AppData) => {
-      isRemoteUpdate.current = true;
-      setData(newData);
-      setTimeout(() => {
-        isRemoteUpdate.current = false;
-      }, 100);
+    // --- REAL-TIME LISTENERS ---
+
+    socket.on('protocol_added', (entry: LogisticsEntry) => {
+      setData(prev => ({
+        ...prev,
+        entries: [entry, ...prev.entries],
+        nextProtocol: (entry.protocol || prev.nextProtocol) + 1,
+        lastAuthor: entry.author
+      }));
+    });
+
+    socket.on('entry_updated', (data: { id: string, updates: Partial<LogisticsEntry> }) => {
+      setData(prev => {
+        const isMainEntry = prev.entries.some(e => e.id === data.id);
+        if (isMainEntry) {
+          return {
+            ...prev,
+            entries: prev.entries.map(e => e.id === data.id ? { ...e, ...data.updates } : e)
+          };
+        } else {
+          return {
+            ...prev,
+            iscaControlEntries: prev.iscaControlEntries.map(e => e.id === data.id ? { ...e, ...data.updates } : e)
+          };
+        }
+      });
+    });
+
+    socket.on('entry_deleted', (id: string) => {
+      setData(prev => ({
+        ...prev,
+        entries: prev.entries.filter(e => e.id !== id),
+        iscaControlEntries: prev.iscaControlEntries.filter(e => e.id !== id)
+      }));
+    });
+
+    socket.on('isca_control_added', (entry: LogisticsEntry) => {
+      setData(prev => ({
+        ...prev,
+        iscaControlEntries: [entry, ...prev.iscaControlEntries],
+        lastAuthor: entry.author
+      }));
+    });
+
+    socket.on('unit_tab_added', (unit: UnitTab) => {
+      setData(prev => ({ ...prev, unitTabs: [...prev.unitTabs, unit] }));
+    });
+
+    socket.on('unit_tab_updated', (data: { id: string, updates: Partial<UnitTab> }) => {
+      setData(prev => ({
+        ...prev,
+        unitTabs: prev.unitTabs.map(u => u.id === data.id ? { ...u, ...data.updates } : u)
+      }));
+    });
+
+    socket.on('unit_tab_deleted', (id: string) => {
+      setData(prev => ({ ...prev, unitTabs: prev.unitTabs.filter(u => u.id !== id) }));
+    });
+
+    socket.on('user_signed_up', (newUser: UserAccount) => {
+      setAllUsers(prev => [...prev, newUser]);
+    });
+
+    socket.on('user_profile_updated', (data: { username: string, updates: Partial<UserAccount> }) => {
+      setAllUsers(prev => prev.map(u => u.username.toUpperCase() === data.username.toUpperCase() ? { ...u, ...data.updates } : u));
+      if (currentUser && data.username.toUpperCase() === currentUser.toUpperCase()) {
+        setUserProfile(prev => ({ ...prev, ...data.updates }));
+      }
     });
 
     socket.on('users_data_updated', (newUsers: UserAccount[]) => {
       setAllUsers(newUsers);
-      if (currentUser) {
-        const current = newUsers.find(u => u.username.toUpperCase() === currentUser.toUpperCase());
-        if (current) {
-          setUserProfile(current);
-        }
-      }
     });
 
-    socket.on('notes_data_updated', (newNotes: Record<string, UserNote[]>) => {
-      setNotesData(newNotes);
+    socket.on('notes_updated', (data: { username: string, notes: UserNote[] }) => {
+      setNotesData(prev => ({ ...prev, [data.username.toUpperCase()]: data.notes }));
     });
 
-    socket.on('reviews_data_updated', (newReviews: any[]) => {
-      setReviewsData(newReviews);
+    socket.on('review_added', (review: any) => {
+      setReviewsData(prev => [...prev, review]);
     });
 
     socket.on('receive_message', (message: ChatMessage) => {
       setData(prev => {
         if (prev.messages.some(m => m.id === message.id)) return prev;
-        return {
-          ...prev,
-          messages: [...prev.messages, message]
-        };
+        return { ...prev, messages: [...prev.messages, message] };
       });
     });
 
-    socket.on('receive_notification', (notification: Notification) => {
+    socket.on('receive_notification', (notif: Notification) => {
       setData(prev => {
-        if (prev.notifications.some(n => n.id === notification.id)) return prev;
-        return {
-          ...prev,
-          notifications: [notification, ...prev.notifications]
-        };
+        if (prev.notifications.some(n => n.id === notif.id)) return prev;
+        return { ...prev, notifications: [notif, ...prev.notifications] };
       });
     });
 
-    socket.on('receive_announcement', (announcement: Announcement) => {
+    socket.on('receive_announcement', (ann: Announcement) => {
       setData(prev => {
-        if (prev.announcements.some(a => a.id === announcement.id)) return prev;
-        return {
-          ...prev,
-          announcements: [announcement, ...prev.announcements]
-        };
+        if (prev.announcements.some(a => a.id === ann.id)) return prev;
+        return { ...prev, announcements: [ann, ...prev.announcements] };
       });
     });
 
     socket.on('receive_recado', (recado: Recado) => {
       setData(prev => {
         if (prev.recados.some(r => r.id === recado.id)) return prev;
-        return {
-          ...prev,
-          recados: [recado, ...prev.recados]
-        };
+        return { ...prev, recados: [recado, ...prev.recados] };
       });
     });
 
@@ -226,35 +263,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    if (!isRemoteUpdate.current && socketRef.current) {
-      socketRef.current.emit('update_app_data', data);
-    }
   }, [data]);
 
   useEffect(() => {
     if (allUsers.length > 0) {
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(allUsers));
-      if (!isRemoteUpdate.current && socketRef.current) {
-        socketRef.current.emit('update_users_data', allUsers);
-      }
     }
   }, [allUsers]);
-
-  useEffect(() => {
-    if (Object.keys(notesData).length > 0) {
-      if (!isRemoteUpdate.current && socketRef.current) {
-        socketRef.current.emit('update_notes_data', notesData);
-      }
-    }
-  }, [notesData]);
-
-  useEffect(() => {
-    if (reviewsData.length > 0) {
-      if (!isRemoteUpdate.current && socketRef.current) {
-        socketRef.current.emit('update_reviews_data', reviewsData);
-      }
-    }
-  }, [reviewsData]);
 
   // Cleanup notifications older than 24 hours
   useEffect(() => {
@@ -335,12 +350,10 @@ const App: React.FC = () => {
       timestamp: new Date().toISOString(),
       iscaStatuses: entry.numIsca.map(() => entry.status)
     };
-    setData(prev => ({
-      ...prev,
-      entries: [newEntry, ...prev.entries],
-      lastAuthor: entry.author,
-      nextProtocol: prev.nextProtocol + 1
-    }));
+
+    if (socketRef.current) {
+      socketRef.current.emit('add_protocol', newEntry);
+    }
     
     addNotification(entry.origem, `Protocolo #P${data.nextProtocol} registrado com sucesso para ${entry.destino}.`, 'success');
     addNotification(entry.destino, `Novo Pré-Alerta recebido (#P${data.nextProtocol}) vindo de ${entry.origem}.`, 'info');
@@ -350,16 +363,11 @@ const App: React.FC = () => {
 
     if (entry.taggedUsers) {
       entry.taggedUsers.forEach(username => {
-        // Find user unit to notify
-        const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
-        if (usersSaved) {
-          const list = JSON.parse(usersSaved);
-          const taggedUser = list.find((u: any) => u.username.toUpperCase() === username.toUpperCase());
-          if (taggedUser && taggedUser.units) {
-            taggedUser.units.forEach((u: string) => {
-              addNotification(u, `Você foi marcado no Pré-Alerta #P${data.nextProtocol} por ${entry.author}.`, 'info');
-            });
-          }
+        const taggedUser = allUsers.find(u => u.username.toUpperCase() === username.toUpperCase());
+        if (taggedUser && taggedUser.units) {
+          taggedUser.units.forEach((u: string) => {
+            addNotification(u, `Você foi marcado no Pré-Alerta #P${data.nextProtocol} por ${entry.author}.`, 'info');
+          });
         }
       });
     }
@@ -457,11 +465,11 @@ const App: React.FC = () => {
       timestamp: new Date().toISOString(),
       iscaStatuses: entry.numIsca.map(() => entry.status)
     };
-    setData(prev => ({
-      ...prev,
-      iscaControlEntries: [newEntry, ...prev.iscaControlEntries],
-      lastAuthor: entry.author
-    }));
+    
+    if (socketRef.current) {
+      socketRef.current.emit('add_isca_control', newEntry);
+    }
+
     addNotification(entry.origem, `Registro de Controle de Isca efetuado para o motorista ${entry.motorista}.`, 'info');
     setExpandedSection('isca_control');
   };
@@ -476,52 +484,41 @@ const App: React.FC = () => {
   };
 
   const handleUpdateEntry = (id: string, updates: Partial<LogisticsEntry>) => {
-    setData((prev: AppData) => {
-      const allEntries = [...prev.entries, ...prev.iscaControlEntries];
-      const entry = allEntries.find(e => e.id === id);
-      
-      if (entry) {
-        if (updates.iscaStatuses) {
-           const oldStatuses = entry.iscaStatuses || entry.numIsca.map(() => entry.status);
-           updates.iscaStatuses.forEach((newS, idx) => {
-              if (newS !== oldStatuses[idx]) {
-                const iscaId = entry.numIsca[idx];
-                const msg = newS === OperationStatus.NO_DESTINO 
-                  ? `🚨 ALERTA DE RESGATE: A Isca #${iscaId} foi resgatada em ${entry.destino}. Processo realizado com sucesso.`
-                  : `⚠️ ALERTA DE EXTRAVIO: Atenção! Isca #${iscaId} marcada como EXTRAVIADA em ${entry.destino}. Iniciar protocolos de busca.`;
-                
-                const type = newS === OperationStatus.NO_DESTINO ? 'success' : 'alert';
-                addNotification(entry.origem, msg, type);
-                addNotification(entry.iscaPertencente[idx], msg, type);
-              }
-           });
+    if (socketRef.current) {
+      socketRef.current.emit('update_entry', { id, updates });
+    }
+
+    const allEntries = [...data.entries, ...data.iscaControlEntries];
+    const entry = allEntries.find(e => e.id === id);
+    
+    if (entry && updates.iscaStatuses) {
+      const oldStatuses = entry.iscaStatuses || entry.numIsca.map(() => entry.status);
+      updates.iscaStatuses.forEach((newS, idx) => {
+        if (newS !== oldStatuses[idx]) {
+          const iscaId = entry.numIsca[idx];
+          const msg = newS === OperationStatus.NO_DESTINO 
+            ? `🚨 ALERTA DE RESGATE: A Isca #${iscaId} foi resgatada em ${entry.destino}. Processo realizado com sucesso.`
+            : `⚠️ ALERTA DE EXTRAVIO: Atenção! Isca #${iscaId} marcada como EXTRAVIADA em ${entry.destino}. Iniciar protocolos de busca.`;
+          
+          const type = newS === OperationStatus.NO_DESTINO ? 'success' : 'alert';
+          addNotification(entry.origem, msg, type);
+          addNotification(entry.iscaPertencente[idx], msg, type);
         }
-      }
-
-      const isInEntries = prev.entries.some(e => e.id === id);
-      const isInIscaControl = prev.iscaControlEntries.some(e => e.id === id);
-
-      return {
-        ...prev,
-        entries: isInEntries ? prev.entries.map(e => e.id === id ? { ...e, ...updates } : e) : prev.entries,
-        iscaControlEntries: isInIscaControl ? prev.iscaControlEntries.map(e => e.id === id ? { ...e, ...updates } : e) : prev.iscaControlEntries,
-      };
-    });
+      });
+    }
     setEditingEntry(null);
   };
 
   const handleAddUnitTab = (unit: UnitTab) => {
-    setData(prev => ({
-      ...prev,
-      unitTabs: [...prev.unitTabs, unit]
-    }));
+    if (socketRef.current) {
+      socketRef.current.emit('add_unit_tab', unit);
+    }
   };
 
   const handleUpdateUnitTab = (id: string, updates: Partial<UnitTab>) => {
-    setData(prev => ({
-      ...prev,
-      unitTabs: prev.unitTabs.map(u => u.id === id ? { ...u, ...updates } : u)
-    }));
+    if (socketRef.current) {
+      socketRef.current.emit('update_unit_tab', { id, updates });
+    }
   };
 
   const handleDeleteEntry = (id: string) => {
@@ -531,19 +528,35 @@ const App: React.FC = () => {
     }
 
     if (window.confirm('TEM CERTEZA QUE DESEJA EXCLUIR ESTE REGISTRO? ESTA AÇÃO NÃO PODE SER DESFEITA.')) {
-      setData(prev => ({
-        ...prev,
-        entries: prev.entries.filter(e => e.id !== id),
-        iscaControlEntries: prev.iscaControlEntries.filter(e => e.id !== id)
-      }));
+      if (socketRef.current) {
+        socketRef.current.emit('delete_entry', id);
+      }
     }
   };
 
   const handleDeleteUnitTab = (id: string) => {
-    setData(prev => ({
-      ...prev,
-      unitTabs: prev.unitTabs.filter(u => u.id !== id)
-    }));
+    if (socketRef.current) {
+      socketRef.current.emit('delete_unit_tab', id);
+    }
+  };
+
+  const handleProfileSave = (updates: Partial<UserAccount>) => {
+    if (socketRef.current) {
+      socketRef.current.emit('update_user_profile', { username: currentUser, updates });
+    }
+  };
+
+  const deleteUser = (username: string) => {
+    const updatedUsers = allUsers.filter(u => u.username !== username);
+    if (socketRef.current) {
+      socketRef.current.emit('update_all_users', updatedUsers);
+    }
+  };
+
+  const saveEditedUser = (username: string, updates: Partial<UserAccount>) => {
+    if (socketRef.current) {
+      socketRef.current.emit('update_user_profile', { username, updates });
+    }
   };
 
   const handleSendMessage = (text: string, channel: 'global' | 'unit' | 'private', recipient?: string) => {
@@ -607,7 +620,11 @@ const App: React.FC = () => {
       <LoginScreen 
         onLogin={handleLogin} 
         allUsers={allUsers} 
-        onSignup={(newUser) => setAllUsers(prev => [...prev, newUser])} 
+        onSignup={(newUser) => {
+          if (socketRef.current) {
+            socketRef.current.emit('signup_user', newUser);
+          }
+        }} 
       />
     );
   }
@@ -798,10 +815,9 @@ const App: React.FC = () => {
               currentUser={currentUser} 
               notes={notesData[currentUser.toUpperCase()] || []}
               onUpdateNotes={(updatedNotes) => {
-                setNotesData(prev => ({
-                  ...prev,
-                  [currentUser.toUpperCase()]: updatedNotes
-                }));
+                if (socketRef.current) {
+                  socketRef.current.emit('update_user_notes', { username: currentUser, notes: updatedNotes });
+                }
               }}
             />
           )}
@@ -810,7 +826,14 @@ const App: React.FC = () => {
               currentUser={currentUser} 
               agents={allUsers}
               reviews={reviewsData}
-              onUpdateReviews={setReviewsData}
+              onUpdateReviews={(updatedReviews) => {
+                // In a real app we might emit 'add_review' instead of full list
+                // but for now let's keep it simple if the list is small
+                const lastReview = updatedReviews[updatedReviews.length - 1];
+                if (socketRef.current && lastReview) {
+                  socketRef.current.emit('add_review', lastReview);
+                }
+              }}
             />
           )}
           {expandedSection === 'founder' && <FounderSection />}
@@ -823,6 +846,9 @@ const App: React.FC = () => {
               onDeleteUnitTab={handleDeleteUnitTab}
               allUsers={allUsers}
               onUpdateAllUsers={setAllUsers}
+              onProfileSave={handleProfileSave}
+              onDeleteUser={deleteUser}
+              onSaveEditedUser={saveEditedUser}
             />
           )}
         </div>

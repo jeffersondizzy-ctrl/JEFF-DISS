@@ -58,6 +58,10 @@ async function startServer() {
   });
 
   let usersData = loadData(USERS_FILE, []);
+  if (usersData.length === 0) {
+    usersData = [{ username: 'ADMIN', units: ['Viana-ES'], personalPassword: 'admin', role: 'ADMINISTRADOR' }];
+    saveData(USERS_FILE, usersData);
+  }
   let notesData = loadData(NOTES_FILE, {});
   let reviewsData = loadData(REVIEWS_FILE, []);
 
@@ -68,43 +72,114 @@ async function startServer() {
     console.log("User connected:", socket.id);
 
     // Send initial data to the connected client
-    socket.emit("initial_data", { appData, usersData, notesData, reviewsData });
+    socket.on("request_initial_data", () => {
+      socket.emit("initial_data", { appData, usersData, notesData, reviewsData });
+    });
 
     socket.on("join_unit", (unitId: string) => {
       socket.join(unitId);
       console.log(`User ${socket.id} joined unit: ${unitId}`);
     });
 
-    socket.on("update_app_data", (newData: any) => {
-      appData = newData;
+    // --- DATA MUTATIONS ---
+
+    socket.on("add_protocol", (entry: any) => {
+      appData.entries.unshift(entry);
+      appData.nextProtocol = (entry.protocol || appData.nextProtocol) + 1;
+      appData.lastAuthor = entry.author;
       saveData(DATA_FILE, appData);
-      // Broadcast to all other clients
-      socket.broadcast.emit("app_data_updated", appData);
+      io.emit("protocol_added", entry);
     });
 
-    socket.on("update_users_data", (newUsers: any) => {
+    socket.on("update_entry", (data: { id: string, updates: any }) => {
+      let found = false;
+      appData.entries = appData.entries.map((e: any) => {
+        if (e.id === data.id) {
+          found = true;
+          return { ...e, ...data.updates };
+        }
+        return e;
+      });
+      
+      if (!found) {
+        appData.iscaControlEntries = appData.iscaControlEntries.map((e: any) => {
+          if (e.id === data.id) return { ...e, ...data.updates };
+          return e;
+        });
+      }
+      
+      saveData(DATA_FILE, appData);
+      io.emit("entry_updated", data);
+    });
+
+    socket.on("delete_entry", (id: string) => {
+      appData.entries = appData.entries.filter((e: any) => e.id !== id);
+      appData.iscaControlEntries = appData.iscaControlEntries.filter((e: any) => e.id !== id);
+      saveData(DATA_FILE, appData);
+      io.emit("entry_deleted", id);
+    });
+
+    socket.on("add_isca_control", (entry: any) => {
+      appData.iscaControlEntries.unshift(entry);
+      appData.lastAuthor = entry.author;
+      saveData(DATA_FILE, appData);
+      io.emit("isca_control_added", entry);
+    });
+
+    socket.on("add_unit_tab", (unit: any) => {
+      appData.unitTabs.push(unit);
+      saveData(DATA_FILE, appData);
+      io.emit("unit_tab_added", unit);
+    });
+
+    socket.on("update_unit_tab", (data: { id: string, updates: any }) => {
+      appData.unitTabs = appData.unitTabs.map((u: any) => u.id === data.id ? { ...u, ...data.updates } : u);
+      saveData(DATA_FILE, appData);
+      io.emit("unit_tab_updated", data);
+    });
+
+    socket.on("delete_unit_tab", (id: string) => {
+      appData.unitTabs = appData.unitTabs.filter((u: any) => u.id !== id);
+      saveData(DATA_FILE, appData);
+      io.emit("unit_tab_deleted", id);
+    });
+
+    socket.on("signup_user", (newUser: any) => {
+      if (!usersData.some((u: any) => u.username.toUpperCase() === newUser.username.toUpperCase())) {
+        usersData.push(newUser);
+        saveData(USERS_FILE, usersData);
+        io.emit("user_signed_up", newUser);
+      }
+    });
+
+    socket.on("update_user_profile", (data: { username: string, updates: any }) => {
+      usersData = usersData.map((u: any) => 
+        u.username.toUpperCase() === data.username.toUpperCase() ? { ...u, ...data.updates } : u
+      );
+      saveData(USERS_FILE, usersData);
+      io.emit("user_profile_updated", data);
+    });
+
+    socket.on("update_all_users", (newUsers: any) => {
       usersData = newUsers;
       saveData(USERS_FILE, usersData);
-      // Broadcast to all other clients
-      socket.broadcast.emit("users_data_updated", usersData);
+      io.emit("users_data_updated", usersData);
     });
 
-    socket.on("update_notes_data", (newNotes: any) => {
-      notesData = newNotes;
+    socket.on("update_user_notes", (data: { username: string, notes: any[] }) => {
+      notesData[data.username.toUpperCase()] = data.notes;
       saveData(NOTES_FILE, notesData);
-      // Broadcast to all other clients
-      socket.broadcast.emit("notes_data_updated", notesData);
+      // Only send back to the user's other devices if needed, but broadcast is simpler
+      io.emit("notes_updated", data);
     });
 
-    socket.on("update_reviews_data", (newReviews: any) => {
-      reviewsData = newReviews;
+    socket.on("add_review", (review: any) => {
+      reviewsData.push(review);
       saveData(REVIEWS_FILE, reviewsData);
-      // Broadcast to all other clients
-      socket.broadcast.emit("reviews_data_updated", reviewsData);
+      io.emit("review_added", review);
     });
 
     socket.on("send_message", (data: any) => {
-      // Update local state and save
       appData.messages.push(data);
       saveData(DATA_FILE, appData);
 
