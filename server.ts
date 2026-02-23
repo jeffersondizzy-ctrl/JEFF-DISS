@@ -103,6 +103,7 @@ async function startServer() {
     });
 
     socket.on("login", (credentials: { username: string, password: any }) => {
+      console.log(`Login attempt for user: ${credentials.username}`);
       const user = usersData.find((u: any) => 
         u.username.toUpperCase() === credentials.username.toUpperCase() && 
         u.personalPassword === credentials.password
@@ -110,9 +111,10 @@ async function startServer() {
       if (user) {
         authenticatedUser = user;
         socket.emit("login_success", user);
-        console.log(`User ${user.username} authenticated on socket ${socket.id}`);
+        console.log(`User ${user.username} authenticated successfully on socket ${socket.id}`);
       } else {
-        socket.emit("login_error", "Credenciais inválidas");
+        console.warn(`Login failed for user: ${credentials.username}`);
+        socket.emit("login_error", "ACESSO NEGADO: ID OU SENHA INCORRETOS");
       }
     });
 
@@ -202,10 +204,14 @@ async function startServer() {
     });
 
     socket.on("signup_user", async (newUser: any) => {
+      console.log(`Signup attempt for user: ${newUser.username}`);
       if (!usersData.some((u: any) => u.username.toUpperCase() === newUser.username.toUpperCase())) {
         usersData.push(newUser);
         await saveData("users_data", USERS_FILE, usersData);
         io.emit("user_signed_up", newUser);
+        console.log(`User ${newUser.username} signed up successfully`);
+      } else {
+        console.warn(`Signup failed: User ${newUser.username} already exists`);
       }
     });
 

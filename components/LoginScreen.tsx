@@ -13,12 +13,13 @@ interface LoginScreenProps {
   onLogin: (user: string, unit: string, pass: string) => void;
   allUsers: UserAccount[];
   onSignup: (newUser: UserAccount) => void;
+  loginError?: string;
 }
 
 const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
 const MASTER_SECURITY_KEY = 'Gerenciamento*@2026';
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, loginError }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   const [login, setLogin] = useState('');
   const [signupUnits, setSignupUnits] = useState<City[]>(['' as City]);
@@ -28,6 +29,13 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup }
   const [loading, setLoading] = useState(false);
   
   const [visuals, setVisuals] = useState<{grains: any[], clouds: any[]}>({grains: [], clouds: []});
+
+  useEffect(() => {
+    if (loginError) {
+      setError(loginError);
+      setLoading(false);
+    }
+  }, [loginError]);
 
   useEffect(() => {
     const grains = Array.from({ length: 15 }).map((_, i) => ({
@@ -54,20 +62,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup }
     e.preventDefault();
     setLoading(true);
     setError('');
-
-    setTimeout(() => {
-      const user = allUsers.find(u => 
-        u.username.toUpperCase() === login.toUpperCase() && 
-        u.personalPassword === password
-      );
-
-      if (user) {
-        onLogin(user.username, user.units[0], password);
-      } else {
-        setError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
-        setLoading(false);
-      }
-    }, 1200);
+    onLogin(login, signupUnits[0] || ('' as City), password);
   };
 
   const handleSignup = (e: React.FormEvent) => {

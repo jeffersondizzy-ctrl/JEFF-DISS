@@ -78,6 +78,7 @@ const App: React.FC = () => {
   });
   const [selectedEntry, setSelectedEntry] = useState<LogisticsEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<LogisticsEntry | null>(null);
+  const [loginError, setLoginError] = useState('');
   
   const socketRef = useRef<Socket | null>(null);
   const mainRef = useRef<HTMLDivElement>(null);
@@ -107,9 +108,22 @@ const App: React.FC = () => {
     socket.on('connect', () => {
       console.log('Connected to server');
       socket.emit('request_initial_data');
-      if (currentUserUnit) {
-        socket.emit('join_unit', currentUserUnit);
-      }
+    });
+
+    socket.on('login_success', (user: UserAccount) => {
+      console.log('Login success:', user.username);
+      setCurrentUser(user.username.toUpperCase());
+      setIsAuthenticated(true);
+      setUserProfile(user);
+      setLoginError('');
+      
+      sessionStorage.setItem('active_session_user', user.username.toUpperCase());
+    });
+
+    socket.on('login_error', (error: string) => {
+      console.error('Login error:', error);
+      setLoginError(error);
+      setIsAuthenticated(false);
     });
 
     socket.on('initial_data', ({ appData, usersData, notesData, reviewsData }: { appData: AppData, usersData: UserAccount[], notesData: Record<string, UserNote[]>, reviewsData: any[] }) => {
@@ -309,23 +323,14 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = (user: string, unit: string, pass: string) => {
-    setCurrentUser(user.toUpperCase());
-    setCurrentUserUnit(unit);
-    setIsAuthenticated(true);
+    setLoginError('');
     sessionStorage.setItem('active_session_user', user.toUpperCase());
     sessionStorage.setItem('active_session_unit', unit);
     sessionStorage.setItem('active_session_pass', pass);
     
-    const current = allUsers.find((u: any) => u.username.toUpperCase() === user.toUpperCase());
-    if (current) {
-      setUserProfile(current);
-      // Join all user units in socket
-      if (socketRef.current) {
-        socketRef.current.emit('login', { username: user, password: pass });
-        if (current.units) {
-          current.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
-        }
-      }
+    if (socketRef.current) {
+      socketRef.current.emit('login', { username: user, password: pass });
+      socketRef.current.emit('join_unit', unit);
     }
   };
 
@@ -637,6 +642,7 @@ const App: React.FC = () => {
       <LoginScreen 
         onLogin={handleLogin} 
         allUsers={allUsers} 
+        loginError={loginError}
         onSignup={(newUser) => {
           if (socketRef.current) {
             socketRef.current.emit('signup_user', newUser);
