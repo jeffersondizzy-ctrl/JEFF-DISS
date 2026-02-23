@@ -90,8 +90,9 @@ const App: React.FC = () => {
   useEffect(() => {
     const sessionUser = sessionStorage.getItem('active_session_user');
     const sessionUnit = sessionStorage.getItem('active_session_unit');
+    const sessionPass = sessionStorage.getItem('active_session_pass');
     
-    if (sessionUser && sessionUnit) {
+    if (sessionUser && sessionUnit && sessionPass) {
       setCurrentUser(sessionUser);
       setCurrentUserUnit(sessionUnit);
       setIsAuthenticated(true);
@@ -117,7 +118,19 @@ const App: React.FC = () => {
       setNotesData(notesData);
       setReviewsData(reviewsData);
       
-      if (currentUser) {
+      const sessionUser = sessionStorage.getItem('active_session_user');
+      const sessionPass = sessionStorage.getItem('active_session_pass');
+      
+      if (sessionUser && sessionPass) {
+        socket.emit('login', { username: sessionUser, password: sessionPass });
+        const current = usersData.find(u => u.username.toUpperCase() === sessionUser.toUpperCase());
+        if (current) {
+          setUserProfile(current);
+          if (current.units) {
+            current.units.forEach(u => socket.emit('join_unit', u));
+          }
+        }
+      } else if (currentUser) {
         const current = usersData.find(u => u.username.toUpperCase() === currentUser.toUpperCase());
         if (current) setUserProfile(current);
       }
@@ -295,19 +308,23 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleLogin = (user: string, unit: string) => {
+  const handleLogin = (user: string, unit: string, pass: string) => {
     setCurrentUser(user.toUpperCase());
     setCurrentUserUnit(unit);
     setIsAuthenticated(true);
     sessionStorage.setItem('active_session_user', user.toUpperCase());
     sessionStorage.setItem('active_session_unit', unit);
+    sessionStorage.setItem('active_session_pass', pass);
     
     const current = allUsers.find((u: any) => u.username.toUpperCase() === user.toUpperCase());
     if (current) {
       setUserProfile(current);
       // Join all user units in socket
-      if (socketRef.current && current.units) {
-        current.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
+      if (socketRef.current) {
+        socketRef.current.emit('login', { username: user, password: pass });
+        if (current.units) {
+          current.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
+        }
       }
     }
   };

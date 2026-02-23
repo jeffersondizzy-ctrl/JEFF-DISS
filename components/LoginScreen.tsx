@@ -10,7 +10,7 @@ import { City, UserAccount } from '../types';
 import { CityDropdown } from './LogisticsForm';
 
 interface LoginScreenProps {
-  onLogin: (user: string, unit: string) => void;
+  onLogin: (user: string, unit: string, pass: string) => void;
   allUsers: UserAccount[];
   onSignup: (newUser: UserAccount) => void;
 }
@@ -62,7 +62,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup }
       );
 
       if (user) {
-        onLogin(user.username, user.units[0]);
+        onLogin(user.username, user.units[0], password);
       } else {
         setError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
         setLoading(false);

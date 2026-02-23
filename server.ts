@@ -6,6 +6,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 
+import { supabase } from "./supabaseClient.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -14,24 +16,45 @@ const USERS_FILE = path.join(__dirname, "users.json");
 const NOTES_FILE = path.join(__dirname, "notes.json");
 const REVIEWS_FILE = path.join(__dirname, "reviews.json");
 
-// Helper to load data
-const loadData = (file: string, defaultData: any) => {
+// Helper to load data from Supabase with local fallback
+const loadData = async (table: string, file: string, defaultData: any) => {
+  try {
+    if (supabase) {
+      const { data, error } = await supabase.from('app_persistence').select('content').eq('key', table).single();
+      if (data && !error) {
+        return data.content;
+      }
+    }
+  } catch (e) {
+    console.error(`Supabase load error for ${table}:`, e);
+  }
+
   if (fs.existsSync(file)) {
     try {
       return JSON.parse(fs.readFileSync(file, "utf-8"));
     } catch (e) {
-      console.error(`Error loading ${file}:`, e);
+      console.error(`Error loading local ${file}:`, e);
     }
   }
   return defaultData;
 };
 
-// Helper to save data
-const saveData = (file: string, data: any) => {
+// Helper to save data to Supabase and local file
+const saveData = async (table: string, file: string, content: any) => {
   try {
-    fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    if (supabase) {
+      // Try to update Supabase
+      const { error } = await supabase.from('app_persistence').upsert({ key: table, content, updated_at: new Date() });
+      if (error) console.error(`Supabase save error for ${table}:`, error);
+    }
   } catch (e) {
-    console.error(`Error saving ${file}:`, e);
+    console.error(`Supabase save exception for ${table}:`, e);
+  }
+
+  try {
+    fs.writeFileSync(file, JSON.stringify(content, null, 2));
+  } catch (e) {
+    console.error(`Error saving local ${file}:`, e);
   }
 };
 
@@ -45,7 +68,7 @@ async function startServer() {
     }
   });
 
-  let appData = loadData(DATA_FILE, {
+  let appData = await loadData("app_data", DATA_FILE, {
     entries: [],
     iscaControlEntries: [],
     messages: [],
@@ -57,13 +80,13 @@ async function startServer() {
     recados: []
   });
 
-  let usersData = loadData(USERS_FILE, []);
+  let usersData = await loadData("users_data", USERS_FILE, []);
   if (usersData.length === 0) {
     usersData = [{ username: 'ADMIN', units: ['Viana-ES'], personalPassword: 'admin', role: 'ADMINISTRADOR' }];
-    saveData(USERS_FILE, usersData);
+    await saveData("users_data", USERS_FILE, usersData);
   }
-  let notesData = loadData(NOTES_FILE, {});
-  let reviewsData = loadData(REVIEWS_FILE, []);
+  let notesData = await loadData("notes_data", NOTES_FILE, {});
+  let reviewsData = await loadData("reviews_data", REVIEWS_FILE, []);
 
   const PORT = 3000;
 
@@ -71,9 +94,26 @@ async function startServer() {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
+    // Track the user associated with this socket
+    let authenticatedUser: any = null;
+
     // Send initial data to the connected client
     socket.on("request_initial_data", () => {
       socket.emit("initial_data", { appData, usersData, notesData, reviewsData });
+    });
+
+    socket.on("login", (credentials: { username: string, password: any }) => {
+      const user = usersData.find((u: any) => 
+        u.username.toUpperCase() === credentials.username.toUpperCase() && 
+        u.personalPassword === credentials.password
+      );
+      if (user) {
+        authenticatedUser = user;
+        socket.emit("login_success", user);
+        console.log(`User ${user.username} authenticated on socket ${socket.id}`);
+      } else {
+        socket.emit("login_error", "Credenciais inválidas");
+      }
     });
 
     socket.on("join_unit", (unitId: string) => {
@@ -81,17 +121,29 @@ async function startServer() {
       console.log(`User ${socket.id} joined unit: ${unitId}`);
     });
 
+    // Middleware-like check for mutations
+    const isAuth = () => {
+      if (!authenticatedUser) {
+        console.warn(`Unauthorized mutation attempt on socket ${socket.id}`);
+        socket.emit("error", "Não autorizado. Por favor, faça login novamente.");
+        return false;
+      }
+      return true;
+    };
+
     // --- DATA MUTATIONS ---
 
-    socket.on("add_protocol", (entry: any) => {
+    socket.on("add_protocol", async (entry: any) => {
+      if (!isAuth()) return;
       appData.entries.unshift(entry);
       appData.nextProtocol = (entry.protocol || appData.nextProtocol) + 1;
       appData.lastAuthor = entry.author;
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("protocol_added", entry);
     });
 
-    socket.on("update_entry", (data: { id: string, updates: any }) => {
+    socket.on("update_entry", async (data: { id: string, updates: any }) => {
+      if (!isAuth()) return;
       let found = false;
       appData.entries = appData.entries.map((e: any) => {
         if (e.id === data.id) {
@@ -108,80 +160,93 @@ async function startServer() {
         });
       }
       
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("entry_updated", data);
     });
 
-    socket.on("delete_entry", (id: string) => {
+    socket.on("delete_entry", async (id: string) => {
+      if (!isAuth()) return;
       appData.entries = appData.entries.filter((e: any) => e.id !== id);
       appData.iscaControlEntries = appData.iscaControlEntries.filter((e: any) => e.id !== id);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("entry_deleted", id);
     });
 
-    socket.on("add_isca_control", (entry: any) => {
+    socket.on("add_isca_control", async (entry: any) => {
+      if (!isAuth()) return;
       appData.iscaControlEntries.unshift(entry);
       appData.lastAuthor = entry.author;
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("isca_control_added", entry);
     });
 
-    socket.on("add_unit_tab", (unit: any) => {
+    socket.on("add_unit_tab", async (unit: any) => {
+      if (!isAuth()) return;
       appData.unitTabs.push(unit);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("unit_tab_added", unit);
     });
 
-    socket.on("update_unit_tab", (data: { id: string, updates: any }) => {
+    socket.on("update_unit_tab", async (data: { id: string, updates: any }) => {
+      if (!isAuth()) return;
       appData.unitTabs = appData.unitTabs.map((u: any) => u.id === data.id ? { ...u, ...data.updates } : u);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("unit_tab_updated", data);
     });
 
-    socket.on("delete_unit_tab", (id: string) => {
+    socket.on("delete_unit_tab", async (id: string) => {
+      if (!isAuth()) return;
       appData.unitTabs = appData.unitTabs.filter((u: any) => u.id !== id);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("unit_tab_deleted", id);
     });
 
-    socket.on("signup_user", (newUser: any) => {
+    socket.on("signup_user", async (newUser: any) => {
+      // Signup doesn't strictly require auth if it's the first user, 
+      // but usually, only admins should do this.
+      if (usersData.length > 0 && !isAuth()) return; 
+      
       if (!usersData.some((u: any) => u.username.toUpperCase() === newUser.username.toUpperCase())) {
         usersData.push(newUser);
-        saveData(USERS_FILE, usersData);
+        await saveData("users_data", USERS_FILE, usersData);
         io.emit("user_signed_up", newUser);
       }
     });
 
-    socket.on("update_user_profile", (data: { username: string, updates: any }) => {
+    socket.on("update_user_profile", async (data: { username: string, updates: any }) => {
+      if (!isAuth()) return;
       usersData = usersData.map((u: any) => 
         u.username.toUpperCase() === data.username.toUpperCase() ? { ...u, ...data.updates } : u
       );
-      saveData(USERS_FILE, usersData);
+      await saveData("users_data", USERS_FILE, usersData);
       io.emit("user_profile_updated", data);
     });
 
-    socket.on("update_all_users", (newUsers: any) => {
+    socket.on("update_all_users", async (newUsers: any) => {
+      if (!isAuth() || authenticatedUser.role !== 'ADMINISTRADOR') return;
       usersData = newUsers;
-      saveData(USERS_FILE, usersData);
+      await saveData("users_data", USERS_FILE, usersData);
       io.emit("users_data_updated", usersData);
     });
 
-    socket.on("update_user_notes", (data: { username: string, notes: any[] }) => {
+    socket.on("update_user_notes", async (data: { username: string, notes: any[] }) => {
+      if (!isAuth()) return;
       notesData[data.username.toUpperCase()] = data.notes;
-      saveData(NOTES_FILE, notesData);
-      // Only send back to the user's other devices if needed, but broadcast is simpler
+      await saveData("notes_data", NOTES_FILE, notesData);
       io.emit("notes_updated", data);
     });
 
-    socket.on("add_review", (review: any) => {
+    socket.on("add_review", async (review: any) => {
+      if (!isAuth()) return;
       reviewsData.push(review);
-      saveData(REVIEWS_FILE, reviewsData);
+      await saveData("reviews_data", REVIEWS_FILE, reviewsData);
       io.emit("review_added", review);
     });
 
-    socket.on("send_message", (data: any) => {
+    socket.on("send_message", async (data: any) => {
+      if (!isAuth()) return;
       appData.messages.push(data);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
 
       if (data.channel === 'global') {
         io.emit("receive_message", data);
@@ -192,26 +257,30 @@ async function startServer() {
       }
     });
 
-    socket.on("send_notification", (data: any) => {
+    socket.on("send_notification", async (data: any) => {
+      if (!isAuth()) return;
       appData.notifications.unshift(data);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.to(data.unit).emit("receive_notification", data);
     });
 
-    socket.on("send_announcement", (data: any) => {
+    socket.on("send_announcement", async (data: any) => {
+      if (!isAuth()) return;
       appData.announcements.unshift(data);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.emit("receive_announcement", data);
     });
 
-    socket.on("send_recado", (data: any) => {
+    socket.on("send_recado", async (data: any) => {
+      if (!isAuth()) return;
       appData.recados.unshift(data);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.to(data.toUnit).emit("receive_recado", data);
       io.to(data.fromUnit).emit("receive_recado", data);
     });
 
-    socket.on("send_recado_response", (data: any) => {
+    socket.on("send_recado_response", async (data: any) => {
+      if (!isAuth()) return;
       appData.recados = appData.recados.map((r: any) => r.id === data.recadoId ? {
         ...r,
         status: 'responded',
@@ -219,7 +288,7 @@ async function startServer() {
         respondedBy: data.respondedBy,
         respondedAt: data.respondedAt
       } : r);
-      saveData(DATA_FILE, appData);
+      await saveData("app_data", DATA_FILE, appData);
       io.to(data.fromUnit).emit("receive_recado_response", data);
       io.to(data.toUnit).emit("receive_recado_response", data);
     });
