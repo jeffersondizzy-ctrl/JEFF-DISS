@@ -101,11 +101,14 @@ const App: React.FC = () => {
     }
   }, []);
 
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
+
   useEffect(() => {
     // Initialize socket connection
     const socket = io(window.location.origin, {
-      reconnectionAttempts: 3,
-      timeout: 5000
+      reconnectionAttempts: 5,
+      timeout: 10000,
+      transports: ['websocket', 'polling']
     });
     socketRef.current = socket;
 
@@ -127,20 +130,23 @@ const App: React.FC = () => {
           if (reviewsData) setReviewsData(reviewsData);
           
           console.log('Supabase fallback load successful');
+          setIsDataLoaded(true);
         }
       } catch (err) {
         console.error('Supabase fallback error:', err);
       }
     };
 
+    // Load immediately from Supabase to ensure "online" data is available
+    loadFromSupabaseFallback();
+
     socket.on('connect', () => {
       console.log('Connected to server');
       socket.emit('request_initial_data');
     });
 
-    socket.on('connect_error', () => {
-      console.warn('Socket connection failed. Using Supabase fallback.');
-      loadFromSupabaseFallback();
+    socket.on('connect_error', (err) => {
+      console.warn('Socket connection failed. Supabase fallback is active.', err.message);
     });
 
     socket.on('login_success', (user: UserAccount) => {
@@ -164,6 +170,7 @@ const App: React.FC = () => {
       setAllUsers(usersData);
       setNotesData(notesData);
       setReviewsData(reviewsData);
+      setIsDataLoaded(true);
       
       const sessionUser = sessionStorage.getItem('active_session_user');
       const sessionPass = sessionStorage.getItem('active_session_pass');
@@ -357,6 +364,12 @@ const App: React.FC = () => {
 
   const handleLogin = async (user: string, unit: string, pass: string) => {
     setLoginError('');
+    
+    if (!isDataLoaded && allUsers.length === 0) {
+      setLoginError('CARREGANDO DADOS DO SERVIDOR... AGUARDE UM INSTANTE.');
+      return;
+    }
+
     sessionStorage.setItem('active_session_user', user.toUpperCase());
     sessionStorage.setItem('active_session_unit', unit);
     sessionStorage.setItem('active_session_pass', pass);
@@ -378,7 +391,7 @@ const App: React.FC = () => {
         setIsAuthenticated(true);
         setUserProfile(foundUser);
       } else {
-        setLoginError('ACESSO NEGADO: ID OU SENHA INCORRETOS (MODO OFFLINE)');
+        setLoginError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
       }
     }
   };
@@ -692,7 +705,12 @@ const App: React.FC = () => {
         onLogin={handleLogin} 
         allUsers={allUsers} 
         loginError={loginError}
+        isDataLoaded={isDataLoaded}
         onSignup={async (newUser) => {
+          if (!isDataLoaded && allUsers.length === 0) {
+            alert("CARREGANDO DADOS... TENTE NOVAMENTE EM ALGUNS SEGUNDOS.");
+            return;
+          }
           if (socketRef.current && socketRef.current.connected) {
             socketRef.current.emit('signup_user', newUser);
           } else if (supabase) {

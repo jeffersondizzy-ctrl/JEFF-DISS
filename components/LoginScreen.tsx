@@ -14,12 +14,13 @@ interface LoginScreenProps {
   allUsers: UserAccount[];
   onSignup: (newUser: UserAccount) => void;
   loginError?: string;
+  isDataLoaded?: boolean;
 }
 
 const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
 const MASTER_SECURITY_KEY = 'Gerenciamento*@2026';
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, loginError }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, loginError, isDataLoaded }) => {
   const [activeTab, setActiveTab] = useState<'login' | 'signup'>('login');
   const [login, setLogin] = useState('');
   const [signupUnits, setSignupUnits] = useState<City[]>(['' as City]);
@@ -141,19 +142,25 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, 
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#120A07] relative overflow-hidden px-4 py-10">
       {/* Real-time Clock */}
       <div className="absolute top-6 right-6 z-30 text-right hidden md:block">
-        <div className="text-roasted-gold font-black text-3xl tracking-tighter leading-none drop-shadow-[0_0_10px_rgba(192,149,92,0.3)]">
+        <div className="text-roasted-gold font-black text-xl tracking-tighter leading-none drop-shadow-[0_0_10px_rgba(192,149,92,0.3)]">
           {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
         </div>
-        <div className="text-white/40 text-[10px] font-black uppercase tracking-[0.3em] mt-2 flex items-center justify-end gap-2">
-          <span className="w-8 h-[1px] bg-roasted-gold/20"></span>
-          {currentTime.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+        <div className="text-white/40 text-[9px] font-black uppercase tracking-[0.2em] mt-2 flex items-center justify-end gap-2">
+          <span className="w-6 h-[1px] bg-roasted-gold/20"></span>
+          {currentTime.toLocaleDateString('pt-BR', { weekday: 'long' }).toUpperCase()} {currentTime.toLocaleDateString('pt-BR')}
+          {!isDataLoaded && (
+            <div className="ml-2 w-2 h-2 bg-roasted-gold rounded-full animate-pulse" title="Sincronizando dados..."></div>
+          )}
         </div>
       </div>
 
       {/* Mobile Clock */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 md:hidden text-center">
-        <div className="text-roasted-gold font-black text-lg tracking-tighter">
+        <div className="text-roasted-gold font-black text-base tracking-tighter">
           {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+        </div>
+        <div className="text-white/30 text-[8px] font-bold uppercase tracking-widest">
+          {currentTime.toLocaleDateString('pt-BR')}
         </div>
       </div>
       {visuals.grains.map(g => (
