@@ -140,6 +140,28 @@ const App: React.FC = () => {
     // Load immediately from Supabase to ensure "online" data is available
     loadFromSupabaseFallback();
 
+    // Supabase Realtime Subscription for "100% online" sync
+    let subscription: any = null;
+    if (supabase) {
+      subscription = supabase
+        .channel('app_changes')
+        .on('postgres_changes', { event: 'INSERT', table: 'app_persistence' }, (payload) => {
+          const { key, content } = payload.new;
+          if (key === 'app_data') setData(content);
+          if (key === 'users_data') setAllUsers(content);
+          if (key === 'notes_data') setNotesData(content);
+          if (key === 'reviews_data') setReviewsData(content);
+        })
+        .on('postgres_changes', { event: 'UPDATE', table: 'app_persistence' }, (payload) => {
+          const { key, content } = payload.new;
+          if (key === 'app_data') setData(content);
+          if (key === 'users_data') setAllUsers(content);
+          if (key === 'notes_data') setNotesData(content);
+          if (key === 'reviews_data') setReviewsData(content);
+        })
+        .subscribe();
+    }
+
     socket.on('connect', () => {
       console.log('Connected to server');
       socket.emit('request_initial_data');
@@ -322,6 +344,9 @@ const App: React.FC = () => {
     return () => {
       socket.disconnect();
       socketRef.current = null;
+      if (subscription) {
+        supabase?.removeChannel(subscription);
+      }
     };
   }, [currentUser]);
 
@@ -334,6 +359,8 @@ const App: React.FC = () => {
     }
   }, [isAuthenticated, currentUserUnit, userProfile.units]);
 
+  // Remove localStorage persistence to ensure 100% online data
+  /*
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
   }, [data]);
@@ -343,6 +370,7 @@ const App: React.FC = () => {
       localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(allUsers));
     }
   }, [allUsers]);
+  */
 
   // Cleanup notifications older than 24 hours
   useEffect(() => {
@@ -597,15 +625,11 @@ const App: React.FC = () => {
     }
 
     ann.taggedUsers.forEach(username => {
-      const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
-      if (usersSaved) {
-        const list = JSON.parse(usersSaved);
-        const taggedUser = list.find((u: any) => u.username.toUpperCase() === username.toUpperCase());
-        if (taggedUser && taggedUser.units) {
-          taggedUser.units.forEach((u: string) => {
-            addNotification(u, `Novo comunicado: "${ann.subject}" - Você foi marcado por ${ann.author}.`, 'info');
-          });
-        }
+      const taggedUser = allUsers.find((u: any) => u.username.toUpperCase() === username.toUpperCase());
+      if (taggedUser && taggedUser.units) {
+        taggedUser.units.forEach((u: string) => {
+          addNotification(u, `Novo comunicado: "${ann.subject}" - Você foi marcado por ${ann.author}.`, 'info');
+        });
       }
     });
   };
@@ -1190,7 +1214,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      <OnlineUsers currentUser={currentUser} currentUserUnit={currentUserUnit} />
+      <OnlineUsers currentUser={currentUser} currentUserUnit={currentUserUnit} agents={allUsers} />
 
       {birthdayCelebrant && (
         <BirthdayModal agent={birthdayCelebrant} onClose={() => setBirthdayCelebrant(null)} />

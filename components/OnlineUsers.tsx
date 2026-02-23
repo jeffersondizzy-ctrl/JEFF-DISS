@@ -10,31 +10,20 @@ import { UsersIcon, XMarkIcon, DatabaseIcon, SparklesIcon } from './icons';
 interface OnlineUsersProps {
   currentUser: string;
   currentUserUnit: string;
+  agents: UserAccount[];
 }
 
-const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
-
-const OnlineUsers: React.FC<OnlineUsersProps> = ({ currentUser, currentUserUnit }) => {
+const OnlineUsers: React.FC<OnlineUsersProps> = ({ currentUser, currentUserUnit, agents }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [agents, setAgents] = useState<UserAccount[]>([]);
   
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_USERS_KEY);
-    if (saved) {
-      try {
-        const list = JSON.parse(saved);
-        // Oculta o ADMIN da lista de usuários disponíveis para o monitor
-        const filteredList = list.filter((u: any) => u.username.toUpperCase() !== 'ADMIN');
-        setAgents(filteredList.map((u: any) => ({ ...u, units: u.units || [u.unit] })));
-      } catch (e) { console.error(e); }
-    }
-  }, []);
-
   // Simulação de usuários online para efeito visual de rede viva
   const onlineAgents = useMemo(() => {
+    // Oculta o ADMIN da lista de usuários disponíveis para o monitor
+    const filteredAgents = agents.filter((u: any) => u.username.toUpperCase() !== 'ADMIN');
+    
     // O usuário atual sempre está online
-    const current = agents.find(a => a.username.toUpperCase() === currentUser.toUpperCase());
-    const others = agents.filter(a => a.username.toUpperCase() !== currentUser.toUpperCase());
+    const current = filteredAgents.find(a => a.username.toUpperCase() === currentUser.toUpperCase());
+    const others = filteredAgents.filter(a => a.username.toUpperCase() !== currentUser.toUpperCase());
     
     // Pega o usuário atual e mais uns 2 aleatórios para simular atividade real
     const simulatedOnline = others.slice(0, 3);

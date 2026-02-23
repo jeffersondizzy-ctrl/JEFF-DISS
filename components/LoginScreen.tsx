@@ -17,7 +17,6 @@ interface LoginScreenProps {
   isDataLoaded?: boolean;
 }
 
-const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
 const MASTER_SECURITY_KEY = 'Gerenciamento*@2026';
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, loginError, isDataLoaded }) => {

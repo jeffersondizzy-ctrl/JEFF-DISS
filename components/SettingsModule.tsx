@@ -21,7 +21,6 @@ interface SettingsModuleProps {
   onSaveEditedUser: (username: string, updates: Partial<UserAccount>) => void;
 }
 
-const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
 const MASTER_SECURITY_KEY = 'Gerenciamento*@2026';
 
 const inputStyle = "w-full bg-black/40 border border-roasted-gold/20 rounded-xl px-5 py-4 text-sm focus:border-roasted-gold outline-none transition-all placeholder:text-white/10 text-white font-bold uppercase tracking-wider";
