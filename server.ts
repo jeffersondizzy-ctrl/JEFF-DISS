@@ -202,10 +202,6 @@ async function startServer() {
     });
 
     socket.on("signup_user", async (newUser: any) => {
-      // Signup doesn't strictly require auth if it's the first user, 
-      // but usually, only admins should do this.
-      if (usersData.length > 0 && !isAuth()) return; 
-      
       if (!usersData.some((u: any) => u.username.toUpperCase() === newUser.username.toUpperCase())) {
         usersData.push(newUser);
         await saveData("users_data", USERS_FILE, usersData);
