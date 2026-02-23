@@ -27,8 +27,16 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, 
   const [masterKey, setMasterKey] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   
   const [visuals, setVisuals] = useState<{grains: any[], clouds: any[]}>({grains: [], clouds: []});
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (loginError) {
@@ -131,6 +139,23 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, 
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-[#120A07] relative overflow-hidden px-4 py-10">
+      {/* Real-time Clock */}
+      <div className="absolute top-6 right-6 z-30 text-right hidden md:block">
+        <div className="text-roasted-gold font-black text-3xl tracking-tighter leading-none drop-shadow-[0_0_10px_rgba(192,149,92,0.3)]">
+          {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        </div>
+        <div className="text-white/40 text-[10px] font-black uppercase tracking-[0.3em] mt-2 flex items-center justify-end gap-2">
+          <span className="w-8 h-[1px] bg-roasted-gold/20"></span>
+          {currentTime.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}
+        </div>
+      </div>
+
+      {/* Mobile Clock */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 md:hidden text-center">
+        <div className="text-roasted-gold font-black text-lg tracking-tighter">
+          {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+        </div>
+      </div>
       {visuals.grains.map(g => (
         <div key={`grain-${g.id}`} className="floating-grain" style={{ left: g.left, bottom: g.bottom, animation: `grain-float ${g.duration} infinite linear`, animationDelay: g.delay, transform: `scale(${g.scale})` }} />
       ))}

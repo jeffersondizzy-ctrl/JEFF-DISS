@@ -5,6 +5,7 @@
 */
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { supabase } from './supabaseClient';
 import { AppState, LogisticsEntry, AppData, OperationStatus, ChatMessage, CriticalAlert, UnitTab, Notification, UserAccount, VehicleType, LoadingPosition, Announcement, Recado } from './types';
 import LogisticsForm from './components/LogisticsForm';
 import HistoryTable from './components/HistoryTable';
@@ -102,12 +103,44 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // Initialize socket connection
-    const socket = io();
+    const socket = io(window.location.origin, {
+      reconnectionAttempts: 3,
+      timeout: 5000
+    });
     socketRef.current = socket;
+
+    // Fallback for Vercel/Serverless where Socket.io might not be available
+    const loadFromSupabaseFallback = async () => {
+      if (!supabase) return;
+      console.log('Attempting Supabase fallback load...');
+      try {
+        const { data: persistenceData } = await supabase.from('app_persistence').select('*');
+        if (persistenceData) {
+          const appData = persistenceData.find(d => d.key === 'app_data')?.content;
+          const usersData = persistenceData.find(d => d.key === 'users_data')?.content;
+          const notesData = persistenceData.find(d => d.key === 'notes_data')?.content;
+          const reviewsData = persistenceData.find(d => d.key === 'reviews_data')?.content;
+
+          if (appData) setData(appData);
+          if (usersData) setAllUsers(usersData);
+          if (notesData) setNotesData(notesData);
+          if (reviewsData) setReviewsData(reviewsData);
+          
+          console.log('Supabase fallback load successful');
+        }
+      } catch (err) {
+        console.error('Supabase fallback error:', err);
+      }
+    };
 
     socket.on('connect', () => {
       console.log('Connected to server');
       socket.emit('request_initial_data');
+    });
+
+    socket.on('connect_error', () => {
+      console.warn('Socket connection failed. Using Supabase fallback.');
+      loadFromSupabaseFallback();
     });
 
     socket.on('login_success', (user: UserAccount) => {
@@ -322,15 +355,31 @@ const App: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const handleLogin = (user: string, unit: string, pass: string) => {
+  const handleLogin = async (user: string, unit: string, pass: string) => {
     setLoginError('');
     sessionStorage.setItem('active_session_user', user.toUpperCase());
     sessionStorage.setItem('active_session_unit', unit);
     sessionStorage.setItem('active_session_pass', pass);
     
-    if (socketRef.current) {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('login', { username: user, password: pass });
       socketRef.current.emit('join_unit', unit);
+    } else {
+      // Fallback login check directly against allUsers (which should be loaded from Supabase)
+      console.log('Socket not connected, performing local login check...');
+      const foundUser = allUsers.find(u => 
+        u.username.toUpperCase() === user.toUpperCase() && 
+        u.personalPassword === pass
+      );
+
+      if (foundUser) {
+        setCurrentUser(foundUser.username.toUpperCase());
+        setCurrentUserUnit(unit);
+        setIsAuthenticated(true);
+        setUserProfile(foundUser);
+      } else {
+        setLoginError('ACESSO NEGADO: ID OU SENHA INCORRETOS (MODO OFFLINE)');
+      }
     }
   };
 
@@ -643,9 +692,29 @@ const App: React.FC = () => {
         onLogin={handleLogin} 
         allUsers={allUsers} 
         loginError={loginError}
-        onSignup={(newUser) => {
-          if (socketRef.current) {
+        onSignup={async (newUser) => {
+          if (socketRef.current && socketRef.current.connected) {
             socketRef.current.emit('signup_user', newUser);
+          } else if (supabase) {
+            // Fallback signup directly to Supabase
+            console.log('Socket not connected, performing direct Supabase signup...');
+            const updatedUsers = [...allUsers, newUser];
+            try {
+              const { error } = await supabase.from('app_persistence').upsert({ 
+                key: 'users_data', 
+                content: updatedUsers, 
+                updated_at: new Date() 
+              });
+              if (!error) {
+                setAllUsers(updatedUsers);
+                alert("CADASTRO REALIZADO COM SUCESSO (MODO DIRETO)");
+              } else {
+                console.error('Supabase signup error:', error);
+                alert("ERRO AO CADASTRAR NO SUPABASE");
+              }
+            } catch (err) {
+              console.error('Supabase signup exception:', err);
+            }
           }
         }} 
       />

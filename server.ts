@@ -88,7 +88,7 @@ async function startServer() {
   let notesData = await loadData("notes_data", NOTES_FILE, {});
   let reviewsData = await loadData("reviews_data", REVIEWS_FILE, []);
 
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT || "3000", 10);
 
   // Socket.io logic
   io.on("connection", (socket) => {
