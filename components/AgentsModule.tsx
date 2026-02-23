@@ -20,6 +20,13 @@ interface AgentReview {
   timestamp: string;
 }
 
+interface AgentsModuleProps {
+  currentUser: string;
+  agents: UserAccount[];
+  reviews: AgentReview[];
+  onUpdateReviews: (reviews: AgentReview[]) => void;
+}
+
 const EMOJI_OPTIONS = [
   { char: '🚀', label: 'Eficiência' },
   { char: '🛡️', label: 'Segurança' },
@@ -28,9 +35,7 @@ const EMOJI_OPTIONS = [
   { char: '☕', label: 'Foco' }
 ];
 
-const AgentsModule: React.FC<{ currentUser: string }> = ({ currentUser }) => {
-  const [agents, setAgents] = useState<UserAccount[]>([]);
-  const [reviews, setReviews] = useState<AgentReview[]>([]);
+const AgentsModule: React.FC<AgentsModuleProps> = ({ currentUser, agents, reviews, onUpdateReviews }) => {
   const [isRatingModalOpen, setIsRatingModalOpen] = useState<string | null>(null);
   const [selectedAgentForReviews, setSelectedAgentForReviews] = useState<string | null>(null);
   
@@ -39,23 +44,9 @@ const AgentsModule: React.FC<{ currentUser: string }> = ({ currentUser }) => {
   const [comment, setComment] = useState('');
   const [selectedEmoji, setSelectedEmoji] = useState('💎');
 
-  useEffect(() => {
-    const savedAgents = localStorage.getItem(STORAGE_USERS_KEY);
-    const savedReviews = localStorage.getItem(STORAGE_REVIEWS_KEY);
-    
-    if (savedAgents) {
-      try {
-        const list = JSON.parse(savedAgents);
-        // Oculta o usuário ADMIN da listagem pública
-        const filteredList = list.filter((u: any) => u.username.toUpperCase() !== 'ADMIN');
-        setAgents(filteredList.map((u: any) => ({ ...u, units: u.units || [u.unit] })));
-      } catch (e) { console.error(e); }
-    }
-    
-    if (savedReviews) {
-      try { setReviews(JSON.parse(savedReviews)); } catch (e) { console.error(e); }
-    }
-  }, []);
+  const filteredAgents = useMemo(() => {
+    return agents.filter(u => u.username.toUpperCase() !== 'ADMIN');
+  }, [agents]);
 
   const saveReview = () => {
     if (!isRatingModalOpen) return;
@@ -71,8 +62,7 @@ const AgentsModule: React.FC<{ currentUser: string }> = ({ currentUser }) => {
     };
 
     const updatedReviews = [...reviews, newReview];
-    setReviews(updatedReviews);
-    localStorage.setItem(STORAGE_REVIEWS_KEY, JSON.stringify(updatedReviews));
+    onUpdateReviews(updatedReviews);
     
     // Reset and close
     setIsRatingModalOpen(null);
@@ -126,7 +116,7 @@ const AgentsModule: React.FC<{ currentUser: string }> = ({ currentUser }) => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-        {agents.map((agent, idx) => {
+        {filteredAgents.map((agent, idx) => {
           const stats = getAgentStats(agent.username);
           return (
             <div 

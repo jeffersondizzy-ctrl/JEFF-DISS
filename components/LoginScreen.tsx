@@ -8,6 +8,8 @@ import Logo3D from './Logo3D';
 import { KeyIcon, PlusIcon, XMarkIcon, DatabaseIcon, ChevronRightIcon } from './icons';
 import { City, UserAccount } from '../types';
 import { CityDropdown } from './LogisticsForm';
+import { db } from '../firebase';
+import { collection, getDocs, addDoc, query, where } from 'firebase/firestore';
 
 interface LoginScreenProps {
   onLogin: (user: string, unit: string) => void;
@@ -60,29 +62,42 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     }));
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
-    setTimeout(() => {
-      const users = getUsers();
-      const user = users.find(u => 
-        u.username.toUpperCase() === login.toUpperCase() && 
-        u.personalPassword === password
-      );
+    try {
+      const q = query(collection(db, 'users'), where('username', '==', login.toUpperCase()));
+      const querySnapshot = await getDocs(q);
+      
+      let user: UserAccount | null = null;
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as UserAccount;
+        if (data.personalPassword === password) {
+          user = data;
+        }
+      });
 
       if (user) {
-        // Agora faz login direto usando a primeira unidade como contexto inicial
         onLogin(user.username, user.units[0]);
       } else {
-        setError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
-        setLoading(false);
+        // Fallback for ADMIN if not in DB yet
+        if (login.toUpperCase() === 'ADMIN' && password === 'admin') {
+          onLogin('ADMIN', 'Viana-ES');
+        } else {
+          setError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
+          setLoading(false);
+        }
       }
-    }, 1200);
+    } catch (e) {
+      console.error("Login error: ", e);
+      setError('ERRO AO CONECTAR AO BANCO DE DADOS');
+      setLoading(false);
+    }
   };
 
-  const handleSignup = (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
@@ -107,11 +122,12 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       return;
     }
 
-    setTimeout(() => {
-      const users = getUsers();
+    try {
       const normalizedUsername = login.toUpperCase().trim();
-      
-      if (users.some(u => u.username.toUpperCase() === normalizedUsername)) {
+      const q = query(collection(db, 'users'), where('username', '==', normalizedUsername));
+      const querySnapshot = await getDocs(q);
+
+      if (!querySnapshot.empty) {
         setError('ERRO: ESTE AGENTE JÁ ESTÁ CADASTRADO');
         setLoading(false);
         return;
@@ -123,8 +139,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
         personalPassword: password 
       };
       
-      const updatedUsers = [...users, newUser];
-      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(updatedUsers));
+      await addDoc(collection(db, 'users'), newUser);
       
       setLoading(false);
       setActiveTab('login');
@@ -133,7 +148,11 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       setMasterKey('');
       setSignupUnits(['' as City]);
       alert("ALISTAMENTO CONCLUÍDO. AGENTE VINCULADO ÀS UNIDADES SELECIONADAS.");
-    }, 1000);
+    } catch (e) {
+      console.error("Signup error: ", e);
+      setError('ERRO AO SALVAR CADASTRO');
+      setLoading(false);
+    }
   };
 
   const addUnitField = () => setSignupUnits([...signupUnits, '' as City]);

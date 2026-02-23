@@ -54,6 +54,22 @@ import {
   NoteIcon
 } from './components/icons';
 
+import { db } from './firebase';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  limit, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc,
+  getDocs,
+  where
+} from 'firebase/firestore';
+
 const STORAGE_KEY = 'pre_alerta_gr_v5_platinum';
 const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
 
@@ -74,7 +90,9 @@ const App: React.FC = () => {
     lastAuthor: '', 
     nextProtocol: 1,
     announcements: [],
-    recados: []
+    recados: [],
+    users: [],
+    reviews: []
   });
   const [selectedEntry, setSelectedEntry] = useState<LogisticsEntry | null>(null);
   const [editingEntry, setEditingEntry] = useState<LogisticsEntry | null>(null);
@@ -84,7 +102,91 @@ const App: React.FC = () => {
   const bellRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    // Listen for entries
+    const qEntries = query(collection(db, 'entries'), orderBy('timestamp', 'desc'));
+    const unsubEntries = onSnapshot(qEntries, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as LogisticsEntry));
+      setData(prev => ({ ...prev, entries }));
+    });
+
+    // Listen for iscaControlEntries
+    const qIscaControl = query(collection(db, 'iscaControlEntries'), orderBy('timestamp', 'desc'));
+    const unsubIscaControl = onSnapshot(qIscaControl, (snapshot) => {
+      const iscaControlEntries = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as LogisticsEntry));
+      setData(prev => ({ ...prev, iscaControlEntries }));
+    });
+
+    // Listen for messages
+    const qMessages = query(collection(db, 'messages'), orderBy('timestamp', 'asc'));
+    const unsubMessages = onSnapshot(qMessages, (snapshot) => {
+      const messages = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as ChatMessage));
+      setData(prev => ({ ...prev, messages }));
+    });
+
+    // Listen for notifications
+    const qNotifications = query(collection(db, 'notifications'), orderBy('timestamp', 'desc'));
+    const unsubNotifications = onSnapshot(qNotifications, (snapshot) => {
+      const notifications = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Notification));
+      setData(prev => ({ ...prev, notifications }));
+    });
+
+    // Listen for unitTabs
+    const qUnitTabs = query(collection(db, 'unitTabs'), orderBy('name', 'asc'));
+    const unsubUnitTabs = onSnapshot(qUnitTabs, (snapshot) => {
+      const unitTabs = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UnitTab));
+      setData(prev => ({ ...prev, unitTabs }));
+    });
+
+    // Listen for announcements
+    const qAnnouncements = query(collection(db, 'announcements'), orderBy('timestamp', 'desc'));
+    const unsubAnnouncements = onSnapshot(qAnnouncements, (snapshot) => {
+      const announcements = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as any));
+      setData(prev => ({ ...prev, announcements }));
+    });
+
+    // Listen for recados
+    const qRecados = query(collection(db, 'recados'), orderBy('timestamp', 'desc'));
+    const unsubRecados = onSnapshot(qRecados, (snapshot) => {
+      const recados = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as any));
+      setData(prev => ({ ...prev, recados }));
+    });
+
+    // Listen for users
+    const qUsers = query(collection(db, 'users'), orderBy('username', 'asc'));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+      const users = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as UserAccount));
+      setData(prev => ({ ...prev, users }));
+    });
+
+    // Listen for reviews
+    const qReviews = query(collection(db, 'reviews'), orderBy('timestamp', 'desc'));
+    const unsubReviews = onSnapshot(qReviews, (snapshot) => {
+      const reviews = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as any));
+      setData(prev => ({ ...prev, reviews }));
+    });
+
+    // Listen for nextProtocol (stored in a settings doc)
+    const unsubSettings = onSnapshot(doc(db, 'settings', 'counters'), (doc) => {
+      if (doc.exists()) {
+        setData(prev => ({ ...prev, nextProtocol: doc.data().nextProtocol || 1 }));
+      }
+    });
+
+    return () => {
+      unsubEntries();
+      unsubIscaControl();
+      unsubMessages();
+      unsubNotifications();
+      unsubUnitTabs();
+      unsubAnnouncements();
+      unsubRecados();
+      unsubUsers();
+      unsubReviews();
+      unsubSettings();
+    };
+  }, []);
+
+  useEffect(() => {
     const sessionUser = sessionStorage.getItem('active_session_user');
     const sessionUnit = sessionStorage.getItem('active_session_unit');
     
@@ -281,16 +383,12 @@ const App: React.FC = () => {
     sessionStorage.setItem('active_session_user', user.toUpperCase());
     sessionStorage.setItem('active_session_unit', unit);
     
-    const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
-    if (usersSaved) {
-      const list = JSON.parse(usersSaved);
-      const current = list.find((u: any) => u.username.toUpperCase() === user.toUpperCase());
-      if (current) {
-        setUserProfile(current);
-        // Join all user units in socket
-        if (socketRef.current && current.units) {
-          current.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
-        }
+    const current = data.users.find((u: any) => u.username.toUpperCase() === user.toUpperCase());
+    if (current) {
+      setUserProfile(current);
+      // Join all user units in socket
+      if (socketRef.current && current.units) {
+        current.units.forEach((u: string) => socketRef.current?.emit('join_unit', u));
       }
     }
   };
@@ -305,9 +403,8 @@ const App: React.FC = () => {
     setExpandedSection('none');
   };
 
-  const addNotification = (unit: string, text: string, type: 'info' | 'alert' | 'success' = 'info') => {
-    const newNotif: Notification = {
-      id: crypto.randomUUID(),
+  const addNotification = async (unit: string, text: string, type: 'info' | 'alert' | 'success' = 'info') => {
+    const newNotif = {
       unit,
       text,
       timestamp: new Date().toISOString(),
@@ -315,153 +412,122 @@ const App: React.FC = () => {
       type
     };
 
-    if (socketRef.current) {
-      socketRef.current.emit('send_notification', newNotif);
+    try {
+      await addDoc(collection(db, 'notifications'), newNotif);
+    } catch (e) {
+      console.error("Error adding notification: ", e);
     }
 
-    setData(prev => ({
-      ...prev,
-      notifications: [newNotif, ...prev.notifications]
-    }));
+    if (socketRef.current) {
+      socketRef.current.emit('send_notification', { ...newNotif, id: 'temp' });
+    }
   };
 
-  const handleAddProtocol = (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
-    const newEntry: LogisticsEntry = {
+  const handleAddProtocol = async (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
+    const protocol = data.nextProtocol;
+    const newEntry = {
       ...entry,
-      id: crypto.randomUUID(),
-      protocol: data.nextProtocol,
+      protocol: protocol,
       timestamp: new Date().toISOString(),
       iscaStatuses: entry.numIsca.map(() => entry.status)
     };
-    setData(prev => ({
-      ...prev,
-      entries: [newEntry, ...prev.entries],
-      lastAuthor: entry.author,
-      nextProtocol: prev.nextProtocol + 1
-    }));
-    
-    addNotification(entry.origem, `Protocolo #P${data.nextProtocol} registrado com sucesso para ${entry.destino}.`, 'success');
-    addNotification(entry.destino, `Novo Pré-Alerta recebido (#P${data.nextProtocol}) vindo de ${entry.origem}.`, 'info');
-    entry.iscaPertencente.forEach(owner => {
-      addNotification(owner, `Suas iscas do protocolo #P${data.nextProtocol} estão em rota para ${entry.destino}.`, 'success');
-    });
 
-    if (entry.taggedUsers) {
-      entry.taggedUsers.forEach(username => {
-        // Find user unit to notify
-        const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
-        if (usersSaved) {
-          const list = JSON.parse(usersSaved);
-          const taggedUser = list.find((u: any) => u.username.toUpperCase() === username.toUpperCase());
+    try {
+      await addDoc(collection(db, 'entries'), newEntry);
+      await setDoc(doc(db, 'settings', 'counters'), { nextProtocol: protocol + 1 }, { merge: true });
+      
+      addNotification(entry.origem, `Protocolo #P${protocol} registrado com sucesso para ${entry.destino}.`, 'success');
+      addNotification(entry.destino, `Novo Pré-Alerta recebido (#P${protocol}) vindo de ${entry.origem}.`, 'info');
+      entry.iscaPertencente.forEach(owner => {
+        addNotification(owner, `Suas iscas do protocolo #P${protocol} estão em rota para ${entry.destino}.`, 'success');
+      });
+
+      if (entry.taggedUsers) {
+        entry.taggedUsers.forEach(username => {
+          const taggedUser = data.users.find((u: any) => u.username.toUpperCase() === username.toUpperCase());
           if (taggedUser && taggedUser.units) {
             taggedUser.units.forEach((u: string) => {
-              addNotification(u, `Você foi marcado no Pré-Alerta #P${data.nextProtocol} por ${entry.author}.`, 'info');
+              addNotification(u, `Você foi marcado no Pré-Alerta #P${protocol} por ${entry.author}.`, 'info');
             });
           }
-        }
-      });
+        });
+      }
+    } catch (e) {
+      console.error("Error adding protocol: ", e);
     }
 
     setExpandedSection('pre_alerts');
   };
 
-  const handleSendRecado = (recado: Omit<Recado, 'id' | 'timestamp' | 'status'>) => {
-    const newRecado: Recado = {
+  const handleSendRecado = async (recado: Omit<Recado, 'id' | 'timestamp' | 'status'>) => {
+    const newRecado = {
       ...recado,
-      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       status: 'pending'
     };
 
-    if (socketRef.current) {
-      socketRef.current.emit('send_recado', newRecado);
+    try {
+      await addDoc(collection(db, 'recados'), newRecado);
+      addNotification(recado.toUnit, `Novo recado de ${recado.fromUnit}: ${recado.subject}`, 'info');
+    } catch (e) {
+      console.error("Error sending recado: ", e);
     }
-
-    setData(prev => ({
-      ...prev,
-      recados: [newRecado, ...prev.recados]
-    }));
-
-    addNotification(recado.toUnit, `Novo recado de ${recado.fromUnit}: ${recado.subject}`, 'info');
   };
 
-  const handleSendRecadoResponse = (recadoId: string, response: string) => {
+  const handleSendRecadoResponse = async (recadoId: string, response: string) => {
     const now = new Date().toISOString();
-    
-    setData(prev => {
-      const recado = prev.recados.find(r => r.id === recadoId);
-      if (!recado) return prev;
+    const recado = data.recados.find(r => r.id === recadoId);
+    if (!recado) return;
 
-      if (socketRef.current) {
-        socketRef.current.emit('send_recado_response', {
-          recadoId,
-          response,
-          respondedBy: currentUser,
-          respondedAt: now,
-          fromUnit: recado.fromUnit,
-          toUnit: recado.toUnit
-        });
-      }
-
+    try {
+      await updateDoc(doc(db, 'recados', recadoId), {
+        status: 'responded',
+        response,
+        respondedBy: currentUser,
+        respondedAt: now
+      });
       addNotification(recado.fromUnit, `Resposta recebida de ${recado.toUnit} para o recado: ${recado.subject}`, 'success');
-
-      return {
-        ...prev,
-        recados: prev.recados.map(r => r.id === recadoId ? {
-          ...r,
-          status: 'responded',
-          response,
-          respondedBy: currentUser,
-          respondedAt: now
-        } : r)
-      };
-    });
+    } catch (e) {
+      console.error("Error responding to recado: ", e);
+    }
   };
 
-  const handleAddAnnouncement = (ann: Omit<Announcement, 'id' | 'timestamp'>) => {
-    const newAnn: Announcement = {
+  const handleAddAnnouncement = async (ann: Omit<Announcement, 'id' | 'timestamp'>) => {
+    const newAnn = {
       ...ann,
-      id: crypto.randomUUID(),
       timestamp: new Date().toISOString()
     };
 
-    if (socketRef.current) {
-      socketRef.current.emit('send_announcement', newAnn);
-    }
-
-    setData(prev => ({
-      ...prev,
-      announcements: [newAnn, ...prev.announcements]
-    }));
-
-    ann.taggedUsers.forEach(username => {
-      const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
-      if (usersSaved) {
-        const list = JSON.parse(usersSaved);
-        const taggedUser = list.find((u: any) => u.username.toUpperCase() === username.toUpperCase());
+    try {
+      await addDoc(collection(db, 'announcements'), newAnn);
+      
+      ann.taggedUsers.forEach(username => {
+        const taggedUser = data.users.find((u: any) => u.username.toUpperCase() === username.toUpperCase());
         if (taggedUser && taggedUser.units) {
           taggedUser.units.forEach((u: string) => {
             addNotification(u, `Novo comunicado: "${ann.subject}" - Você foi marcado por ${ann.author}.`, 'info');
           });
         }
-      }
-    });
+      });
+    } catch (e) {
+      console.error("Error adding announcement: ", e);
+    }
   };
 
-  const handleAddIscaControl = (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
-    const newEntry: LogisticsEntry = {
+  const handleAddIscaControl = async (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
+    const newEntry = {
       ...entry,
-      id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
       iscaStatuses: entry.numIsca.map(() => entry.status)
     };
-    setData(prev => ({
-      ...prev,
-      iscaControlEntries: [newEntry, ...prev.iscaControlEntries],
-      lastAuthor: entry.author
-    }));
-    addNotification(entry.origem, `Registro de Controle de Isca efetuado para o motorista ${entry.motorista}.`, 'info');
-    setExpandedSection('isca_control');
+
+    try {
+      await addDoc(collection(db, 'iscaControlEntries'), newEntry);
+      addNotification(entry.origem, `Registro de Controle de Isca efetuado para o motorista ${entry.motorista}.`, 'info');
+      setExpandedSection('isca_control');
+    } catch (e) {
+      console.error("Error adding isca control: ", e);
+    }
   };
 
   const handleSelectEntry = (entry: LogisticsEntry) => {
@@ -473,82 +539,82 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateEntry = (id: string, updates: Partial<LogisticsEntry>) => {
-    setData((prev: AppData) => {
-      const allEntries = [...prev.entries, ...prev.iscaControlEntries];
-      const entry = allEntries.find(e => e.id === id);
-      
+  const handleUpdateEntry = async (id: string, updates: Partial<LogisticsEntry>) => {
+    const allEntries = [...data.entries, ...data.iscaControlEntries];
+    const entry = allEntries.find(e => e.id === id);
+    const isControl = data.iscaControlEntries.some(e => e.id === id);
+    const collectionName = isControl ? 'iscaControlEntries' : 'entries';
+
+    try {
       if (entry) {
         if (updates.iscaStatuses) {
-           const oldStatuses = entry.iscaStatuses || entry.numIsca.map(() => entry.status);
-           updates.iscaStatuses.forEach((newS, idx) => {
-              if (newS !== oldStatuses[idx]) {
-                const iscaId = entry.numIsca[idx];
-                const msg = newS === OperationStatus.NO_DESTINO 
-                  ? `🚨 ALERTA DE RESGATE: A Isca #${iscaId} foi resgatada em ${entry.destino}. Processo realizado com sucesso.`
-                  : `⚠️ ALERTA DE EXTRAVIO: Atenção! Isca #${iscaId} marcada como EXTRAVIADA em ${entry.destino}. Iniciar protocolos de busca.`;
-                
-                const type = newS === OperationStatus.NO_DESTINO ? 'success' : 'alert';
-                addNotification(entry.origem, msg, type);
-                addNotification(entry.iscaPertencente[idx], msg, type);
-              }
-           });
+          const oldStatuses = entry.iscaStatuses || entry.numIsca.map(() => entry.status);
+          updates.iscaStatuses.forEach((newS, idx) => {
+            if (newS !== oldStatuses[idx]) {
+              const iscaId = entry.numIsca[idx];
+              const msg = newS === OperationStatus.NO_DESTINO 
+                ? `🚨 ALERTA DE RESGATE: A Isca #${iscaId} foi resgatada em ${entry.destino}. Processo realizado com sucesso.`
+                : `⚠️ ALERTA DE EXTRAVIO: Atenção! Isca #${iscaId} marcada como EXTRAVIADA em ${entry.destino}. Iniciar protocolos de busca.`;
+              
+              const type = newS === OperationStatus.NO_DESTINO ? 'success' : 'alert';
+              addNotification(entry.origem, msg, type);
+              addNotification(entry.iscaPertencente[idx], msg, type);
+            }
+          });
         }
+        await updateDoc(doc(db, collectionName, id), updates);
       }
-
-      const isInEntries = prev.entries.some(e => e.id === id);
-      const isInIscaControl = prev.iscaControlEntries.some(e => e.id === id);
-
-      return {
-        ...prev,
-        entries: isInEntries ? prev.entries.map(e => e.id === id ? { ...e, ...updates } : e) : prev.entries,
-        iscaControlEntries: isInIscaControl ? prev.iscaControlEntries.map(e => e.id === id ? { ...e, ...updates } : e) : prev.iscaControlEntries,
-      };
-    });
+    } catch (e) {
+      console.error("Error updating entry: ", e);
+    }
     setEditingEntry(null);
   };
 
-  const handleAddUnitTab = (unit: UnitTab) => {
-    setData(prev => ({
-      ...prev,
-      unitTabs: [...prev.unitTabs, unit]
-    }));
+  const handleAddUnitTab = async (unit: UnitTab) => {
+    try {
+      await addDoc(collection(db, 'unitTabs'), unit);
+    } catch (e) {
+      console.error("Error adding unit tab: ", e);
+    }
   };
 
-  const handleUpdateUnitTab = (id: string, updates: Partial<UnitTab>) => {
-    setData(prev => ({
-      ...prev,
-      unitTabs: prev.unitTabs.map(u => u.id === id ? { ...u, ...updates } : u)
-    }));
+  const handleUpdateUnitTab = async (id: string, updates: Partial<UnitTab>) => {
+    try {
+      await updateDoc(doc(db, 'unitTabs', id), updates);
+    } catch (e) {
+      console.error("Error updating unit tab: ", e);
+    }
   };
 
-  const handleDeleteEntry = (id: string) => {
+  const handleDeleteEntry = async (id: string) => {
     if (!id) {
       alert('ERRO: ID INVÁLIDO PARA EXCLUSÃO.');
       return;
     }
 
     if (window.confirm('TEM CERTEZA QUE DESEJA EXCLUIR ESTE REGISTRO? ESTA AÇÃO NÃO PODE SER DESFEITA.')) {
-      setData(prev => ({
-        ...prev,
-        entries: prev.entries.filter(e => e.id !== id),
-        iscaControlEntries: prev.iscaControlEntries.filter(e => e.id !== id)
-      }));
+      const isControl = data.iscaControlEntries.some(e => e.id === id);
+      const collectionName = isControl ? 'iscaControlEntries' : 'entries';
+      try {
+        await deleteDoc(doc(db, collectionName, id));
+      } catch (e) {
+        console.error("Error deleting entry: ", e);
+      }
     }
   };
 
   const allUsers: UserAccount[] = JSON.parse(localStorage.getItem(STORAGE_USERS_KEY) || '[]');
 
-  const handleDeleteUnitTab = (id: string) => {
-    setData(prev => ({
-      ...prev,
-      unitTabs: prev.unitTabs.filter(u => u.id !== id)
-    }));
+  const handleDeleteUnitTab = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'unitTabs', id));
+    } catch (e) {
+      console.error("Error deleting unit tab: ", e);
+    }
   };
 
-  const handleSendMessage = (text: string, channel: 'global' | 'unit' | 'private', recipient?: string) => {
-    const newMessage: ChatMessage = {
-      id: crypto.randomUUID(),
+  const handleSendMessage = async (text: string, channel: 'global' | 'unit' | 'private', recipient?: string) => {
+    const newMessage = {
       author: currentUser,
       authorUnit: currentUserUnit,
       text,
@@ -557,24 +623,23 @@ const App: React.FC = () => {
       recipient
     };
 
-    if (socketRef.current) {
-      socketRef.current.emit('send_message', newMessage);
+    try {
+      await addDoc(collection(db, 'messages'), newMessage);
+    } catch (e) {
+      console.error("Error sending message: ", e);
     }
-
-    setData(prev => ({
-      ...prev,
-      messages: [...prev.messages, newMessage]
-    }));
   };
 
   const userUnits = userProfile.units || [currentUserUnit];
   const unreadCount = data.notifications.filter(n => !n.read && userUnits.includes(n.unit)).length;
 
-  const markAllNotificationsAsRead = () => {
-    setData(prev => ({
-      ...prev,
-      notifications: prev.notifications.map(n => userUnits.includes(n.unit) ? { ...n, read: true } : n)
-    }));
+  const markAllNotificationsAsRead = async () => {
+    const unread = data.notifications.filter(n => !n.read && userUnits.includes(n.unit));
+    try {
+      await Promise.all(unread.map(n => updateDoc(doc(db, 'notifications', n.id), { read: true })));
+    } catch (e) {
+      console.error("Error marking notifications as read: ", e);
+    }
   };
 
   const NavIcon = ({ type, label, icon: Icon, color = "#C0955C", onClick }: { type: any, label: string, icon: any, color?: string, onClick?: () => void }) => (
@@ -763,7 +828,7 @@ const App: React.FC = () => {
           {expandedSection === 'announcements' && (
             <AnnouncementsModule 
               announcements={data.announcements} 
-              users={allUsers} 
+              users={data.users} 
               currentUser={currentUser} 
               currentUserUnit={currentUserUnit} 
               onAddAnnouncement={handleAddAnnouncement} 
@@ -788,7 +853,7 @@ const App: React.FC = () => {
           )}
           {expandedSection === 'stats' && <DashboardStats entries={data.entries} unitTabs={data.unitTabs} onAddUnitTab={handleAddUnitTab} />}
           {expandedSection === 'notes' && <NotesModule currentUser={currentUser} />}
-          {expandedSection === 'agents' && <AgentsModule currentUser={currentUser} />}
+          {expandedSection === 'agents' && <AgentsModule currentUser={currentUser} users={data.users} reviews={data.reviews} />}
           {expandedSection === 'founder' && <FounderSection />}
           {expandedSection === 'settings' && (
             <SettingsModule 
@@ -797,6 +862,7 @@ const App: React.FC = () => {
               unitTabs={data.unitTabs}
               onUpdateUnitTab={handleUpdateUnitTab}
               onDeleteUnitTab={handleDeleteUnitTab}
+              users={data.users}
             />
           )}
         </div>

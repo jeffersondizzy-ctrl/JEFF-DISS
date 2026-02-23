@@ -14,6 +14,11 @@ interface SettingsModuleProps {
   unitTabs: UnitTab[];
   onUpdateUnitTab: (id: string, updates: Partial<UnitTab>) => void;
   onDeleteUnitTab: (id: string) => void;
+  allUsers: UserAccount[];
+  onUpdateAllUsers: (users: UserAccount[]) => void;
+  onProfileSave: (updates: Partial<UserAccount>) => void;
+  onDeleteUser: (username: string) => void;
+  onSaveEditedUser: (username: string, updates: Partial<UserAccount>) => void;
 }
 
 const STORAGE_USERS_KEY = 'pre_alerta_gr_agent_registry_v2';
@@ -22,11 +27,21 @@ const MASTER_SECURITY_KEY = 'Gerenciamento*@2026';
 const inputStyle = "w-full bg-black/40 border border-roasted-gold/20 rounded-xl px-5 py-4 text-sm focus:border-roasted-gold outline-none transition-all placeholder:text-white/10 text-white font-bold uppercase tracking-wider";
 const labelStyle = "text-[10px] font-black text-roasted-gold uppercase tracking-[0.2em] mb-2 block ml-1 opacity-70";
 
-const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCurrentUser, unitTabs, onUpdateUnitTab, onDeleteUnitTab }) => {
+const SettingsModule: React.FC<SettingsModuleProps> = ({ 
+  currentUser, 
+  onUpdateCurrentUser, 
+  unitTabs, 
+  onUpdateUnitTab, 
+  onDeleteUnitTab, 
+  allUsers, 
+  onUpdateAllUsers,
+  onProfileSave,
+  onDeleteUser,
+  onSaveEditedUser
+}) => {
   const [activeTab, setActiveTab] = useState<'profile' | 'admin'>('profile');
   const [adminAuth, setAdminAuth] = useState(false);
   const [masterKey, setMasterKey] = useState('');
-  const [users, setUsers] = useState<UserAccount[]>([]);
   
   // Perfil state
   const [profileData, setProfileData] = useState<Partial<UserAccount>>({});
@@ -39,25 +54,13 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCu
   const [adminSubTab, setAdminSubTab] = useState<'users' | 'units'>('users');
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_USERS_KEY);
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      const list = parsed.map((u: any) => ({ ...u, units: u.units || [u.unit] }));
-      setUsers(list);
-      
-      const current = list.find((u: any) => u.username.toUpperCase() === currentUser.toUpperCase());
-      if (current) setProfileData(current);
-    }
-  }, [currentUser]);
+    const current = allUsers.find((u: any) => u.username.toUpperCase() === currentUser.toUpperCase());
+    if (current) setProfileData(current);
+  }, [currentUser, allUsers]);
 
   const handleProfileSave = (e: React.FormEvent) => {
     e.preventDefault();
-    const updatedUsers = users.map(u => 
-      u.username.toUpperCase() === currentUser.toUpperCase() ? { ...u, ...profileData } : u
-    );
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(updatedUsers));
-    setUsers(updatedUsers);
-    onUpdateCurrentUser(profileData);
+    onProfileSave(profileData);
     alert("PERFIL ATUALIZADO COM SUCESSO.");
   };
 
@@ -88,9 +91,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCu
        return;
     }
     if (window.confirm(`DESEJA REALMENTE EXCLUIR O AGENTE ${username}? ESTA AÇÃO É IRREVERSÍVEL.`)) {
-      const updated = users.filter(u => u.username !== username);
-      localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(updated));
-      setUsers(updated);
+      onDeleteUser(username);
     }
   };
 
@@ -102,9 +103,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCu
   const saveEditedUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
-    const updated = users.map(u => u.username === originalUsername ? editingUser : u);
-    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(updated));
-    setUsers(updated);
+    onSaveEditedUser(originalUsername, editingUser);
     setEditingUser(null);
     setOriginalUsername('');
     alert("DADOS DO AGENTE ATUALIZADOS.");
@@ -247,7 +246,7 @@ const SettingsModule: React.FC<SettingsModuleProps> = ({ currentUser, onUpdateCu
                      </tr>
                      </thead>
                      <tbody className="divide-y divide-white/5">
-                        {users.filter(u => u.username.toUpperCase() !== 'ADMIN').map(u => (
+                        {allUsers.filter(u => u.username.toUpperCase() !== 'ADMIN').map(u => (
                            <tr key={u.username} className="hover:bg-white/5 transition-colors">
                               <td className="px-8 py-5">
                                  <div className="flex items-center gap-4">
