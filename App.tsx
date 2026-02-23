@@ -152,11 +152,17 @@ const App: React.FC = () => {
     socket.on('login_success', (user: UserAccount) => {
       console.log('Login success:', user.username);
       setCurrentUser(user.username.toUpperCase());
+      
+      // Recover unit from session storage if not provided
+      const sessionUnit = sessionStorage.getItem('active_session_unit') || (user.units && user.units[0]) || '';
+      setCurrentUserUnit(sessionUnit);
+      
       setIsAuthenticated(true);
       setUserProfile(user);
       setLoginError('');
       
       sessionStorage.setItem('active_session_user', user.username.toUpperCase());
+      if (sessionUnit) sessionStorage.setItem('active_session_unit', sessionUnit);
     });
 
     socket.on('login_error', (error: string) => {
@@ -363,9 +369,11 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = async (user: string, unit: string, pass: string) => {
+    console.log('Attempting login for:', user, 'at unit:', unit);
     setLoginError('');
     
     if (!isDataLoaded && allUsers.length === 0) {
+      console.warn('Login attempted before data loaded');
       setLoginError('CARREGANDO DADOS DO SERVIDOR... AGUARDE UM INSTANTE.');
       return;
     }
@@ -374,25 +382,41 @@ const App: React.FC = () => {
     sessionStorage.setItem('active_session_unit', unit);
     sessionStorage.setItem('active_session_pass', pass);
     
-    if (socketRef.current && socketRef.current.connected) {
-      socketRef.current.emit('login', { username: user, password: pass });
-      socketRef.current.emit('join_unit', unit);
-    } else {
-      // Fallback login check directly against allUsers (which should be loaded from Supabase)
-      console.log('Socket not connected, performing local login check...');
-      const foundUser = allUsers.find(u => 
-        u.username.toUpperCase() === user.toUpperCase() && 
-        u.personalPassword === pass
-      );
-
-      if (foundUser) {
-        setCurrentUser(foundUser.username.toUpperCase());
-        setCurrentUserUnit(unit);
-        setIsAuthenticated(true);
-        setUserProfile(foundUser);
-      } else {
-        setLoginError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
+    // Set a safety timeout to prevent "stuck verifying"
+    const timeoutId = setTimeout(() => {
+      if (!isAuthenticated) {
+        console.warn('Socket login timeout, trying local fallback');
+        performLocalLogin(user, unit, pass);
       }
+    }, 4000);
+
+    if (socketRef.current && socketRef.current.connected) {
+      console.log('Emitting login via socket');
+      socketRef.current.emit('login', { username: user, password: pass });
+      if (unit) socketRef.current.emit('join_unit', unit);
+    } else {
+      console.log('Socket not connected, performing local login');
+      clearTimeout(timeoutId);
+      performLocalLogin(user, unit, pass);
+    }
+  };
+
+  const performLocalLogin = (user: string, unit: string, pass: string) => {
+    const foundUser = allUsers.find(u => 
+      u.username.toUpperCase() === user.toUpperCase() && 
+      u.personalPassword === pass
+    );
+
+    if (foundUser) {
+      console.log('Local login success');
+      setCurrentUser(foundUser.username.toUpperCase());
+      setCurrentUserUnit(unit || (foundUser.units && foundUser.units[0]) || '');
+      setIsAuthenticated(true);
+      setUserProfile(foundUser);
+      setLoginError('');
+    } else {
+      console.warn('Local login failed');
+      setLoginError('ACESSO NEGADO: ID OU SENHA INCORRETOS');
     }
   };
 

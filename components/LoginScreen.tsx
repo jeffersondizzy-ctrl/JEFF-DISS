@@ -43,6 +43,9 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, allUsers, onSignup, 
     if (loginError) {
       setError(loginError);
       setLoading(false);
+    } else {
+      // If loginError is cleared, it means a new attempt started or was reset
+      // We don't necessarily want to set loading to false here because handleLogin sets it to true
     }
   }, [loginError]);
 
