@@ -36,6 +36,18 @@ interface IscaControlProps {
 const inputStyle = "w-full bg-black/40 border border-roasted-gold/20 rounded-xl px-5 py-4 text-sm focus:border-roasted-gold outline-none transition-all placeholder:text-white/10 text-white font-bold uppercase tracking-wider";
 const labelStyle = "text-[10px] font-black text-roasted-gold uppercase tracking-[0.2em] mb-2 block ml-1 opacity-70";
 
+const statusColors: Record<string, string> = {
+  [OperationStatus.ISCA_DISPONIVEL]: 'bg-emerald-500',
+  [OperationStatus.PREPARACAO]: 'bg-amber-500',
+  [OperationStatus.ISCA_CONGELADA]: 'bg-blue-500',
+  [OperationStatus.COM_DEFEITO]: 'bg-red-500',
+  [OperationStatus.ROTA_IDA]: 'bg-indigo-500',
+  [OperationStatus.ROTA_VOLTA]: 'bg-purple-500',
+  [OperationStatus.EXTRAVIADA]: 'bg-rose-600',
+  [OperationStatus.NO_DESTINO]: 'bg-cyan-500',
+  [OperationStatus.VIA_CORREIO]: 'bg-slate-500',
+};
+
 const IscaControl: React.FC<IscaControlProps> = ({ 
   onAdd, 
   onUpdateEntry, 
@@ -212,6 +224,30 @@ const IscaControl: React.FC<IscaControlProps> = ({
     ).sort((a, b) => b.id.localeCompare(a.id));
   }, [entries, iscaControlEntries, activeUnit, searchTerm, activeSubTab]);
 
+  const statusStats = useMemo(() => {
+    const stats: Record<string, number> = {
+      [OperationStatus.ISCA_DISPONIVEL]: 0,
+      [OperationStatus.PREPARACAO]: 0,
+      [OperationStatus.ISCA_CONGELADA]: 0,
+      [OperationStatus.COM_DEFEITO]: 0,
+      [OperationStatus.ROTA_IDA]: 0,
+      [OperationStatus.ROTA_VOLTA]: 0,
+      [OperationStatus.EXTRAVIADA]: 0,
+      [OperationStatus.NO_DESTINO]: 0,
+      [OperationStatus.VIA_CORREIO]: 0,
+    };
+    
+    myIscas.forEach(item => {
+      if (item.status && stats[item.status] !== undefined) {
+        stats[item.status]++;
+      }
+    });
+    
+    return stats;
+  }, [myIscas]);
+
+  const totalIscas = myIscas.length;
+
   if (!activeUnit) {
     return (
       <div className="space-y-12 animate-in fade-in duration-700">
@@ -307,6 +343,30 @@ const IscaControl: React.FC<IscaControlProps> = ({
       </div>
 
       <div className="space-y-6">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-4 px-4">
+          {Object.entries(statusStats).map(([status, count]) => {
+            if (count === 0 && totalIscas > 0) return null;
+            const percentage = totalIscas > 0 ? (count / totalIscas) * 100 : 0;
+            return (
+              <div key={status} className="bg-black/40 p-4 rounded-2xl border border-white/5 flex flex-col gap-1 hover:border-roasted-gold/20 transition-all group">
+                <span className="text-[7px] font-black text-roasted-gold/60 uppercase tracking-widest truncate group-hover:text-roasted-gold transition-colors">
+                  {status.replace('ISCA ', '')}
+                </span>
+                <div className="flex items-end gap-2">
+                  <span className="text-xl font-black text-white">{count}</span>
+                  <span className="text-[8px] text-white/20 mb-1">{percentage.toFixed(0)}%</span>
+                </div>
+                <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
+                  <div 
+                    className={`h-full ${statusColors[status] || 'bg-roasted-gold'} transition-all duration-1000`} 
+                    style={{ width: `${percentage}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         <div className="flex flex-col md:flex-row justify-between items-center px-4 gap-6">
           <div className="flex bg-black/40 p-1 rounded-2xl border border-white/5">
             <button 
@@ -362,25 +422,28 @@ const IscaControl: React.FC<IscaControlProps> = ({
                   </td>
                   <td className="px-10 py-6">
                     <div className="flex flex-col gap-2">
-                       <select 
-                         value={item.status}
-                         onChange={(e) => {
-                           const newStatus = e.target.value as OperationStatus;
-                           const newStatuses = [...item.allIscaStatuses];
-                           newStatuses[item.iscaIndex] = newStatus;
-                           onUpdateEntry(item.entryId, { iscaStatuses: newStatuses });
-                         }}
-                         className="bg-[#0a192f] text-roasted-gold border border-roasted-gold/30 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase outline-none focus:border-roasted-gold transition-all w-full min-w-[160px] cursor-pointer hover:bg-black/40"
-                       >
-                         <option value={OperationStatus.ISCA_DISPONIVEL}>DISPONÍVEL</option>
-                         <option value={OperationStatus.PREPARACAO}>PREPARAÇÃO</option>
-                         <option value={OperationStatus.ISCA_CONGELADA}>ISCA CONGELADA</option>
-                         <option value={OperationStatus.COM_DEFEITO}>COM DEFEITO</option>
-                         <option value={OperationStatus.ROTA_IDA}>ROTA IDA</option>
-                         <option value={OperationStatus.ROTA_VOLTA}>ROTA VOLTA</option>
-                         <option value={OperationStatus.EXTRAVIADA}>EXTRAVIADA</option>
-                         <option value={OperationStatus.NO_DESTINO}>RESGATADA</option>
-                       </select>
+                       <div className="flex items-center gap-3">
+                         <div className={`w-2 h-2 rounded-full ${statusColors[item.status] || 'bg-roasted-gold'} shadow-[0_0_10px_rgba(192,149,92,0.3)] animate-pulse`}></div>
+                         <select 
+                           value={item.status}
+                           onChange={(e) => {
+                             const newStatus = e.target.value as OperationStatus;
+                             const newStatuses = [...item.allIscaStatuses];
+                             newStatuses[item.iscaIndex] = newStatus;
+                             onUpdateEntry(item.entryId, { iscaStatuses: newStatuses });
+                           }}
+                           className="bg-[#0a192f] text-roasted-gold border border-roasted-gold/30 rounded-xl px-4 py-2.5 text-[10px] font-black uppercase outline-none focus:border-roasted-gold transition-all flex-1 min-w-[160px] cursor-pointer hover:bg-black/40"
+                         >
+                           <option value={OperationStatus.ISCA_DISPONIVEL}>DISPONÍVEL</option>
+                           <option value={OperationStatus.PREPARACAO}>PREPARAÇÃO</option>
+                           <option value={OperationStatus.ISCA_CONGELADA}>ISCA CONGELADA</option>
+                           <option value={OperationStatus.COM_DEFEITO}>COM DEFEITO</option>
+                           <option value={OperationStatus.ROTA_IDA}>ROTA IDA</option>
+                           <option value={OperationStatus.ROTA_VOLTA}>ROTA VOLTA</option>
+                           <option value={OperationStatus.EXTRAVIADA}>EXTRAVIADA</option>
+                           <option value={OperationStatus.NO_DESTINO}>RESGATADA</option>
+                         </select>
+                       </div>
                        <div className="flex items-center gap-1.5 px-1">
                          <MapIcon className="w-3 h-3 text-white/20" />
                          <span className="text-[8px] text-white/40 uppercase font-black tracking-widest">{item.destino}</span>

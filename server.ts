@@ -82,7 +82,12 @@ async function startServer() {
 
   let usersData = await loadData("users_data", USERS_FILE, []);
   if (usersData.length === 0) {
-    usersData = [{ username: 'ADMIN', units: ['Viana-ES'], personalPassword: 'admin', role: 'ADMINISTRADOR' }];
+    usersData = [{ 
+      username: 'JEFFERSON', 
+      units: ['Santa Luzia-MG', 'Montes Claros-MG', 'Viana-ES', 'Cuiabá-MT'], 
+      personalPassword: '#trescafe27', 
+      role: 'ADMINISTRADOR' 
+    }];
     await saveData("users_data", USERS_FILE, usersData);
   }
   let notesData = await loadData("notes_data", NOTES_FILE, {});
