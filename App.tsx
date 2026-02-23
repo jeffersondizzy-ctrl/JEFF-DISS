@@ -450,7 +450,7 @@ const App: React.FC = () => {
     }));
   };
 
-  const handleAddProtocol = (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
+  const handleAddProtocol = async (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
     const newEntry: LogisticsEntry = {
       ...entry,
       id: crypto.randomUUID(),
@@ -459,8 +459,24 @@ const App: React.FC = () => {
       iscaStatuses: entry.numIsca.map(() => entry.status)
     };
 
-    if (socketRef.current) {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('add_protocol', newEntry);
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase protocol addition...');
+      const updatedEntries = [newEntry, ...data.entries];
+      const nextProtocol = (newEntry.protocol || data.nextProtocol) + 1;
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, entries: updatedEntries, nextProtocol, lastAuthor: newEntry.author }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, entries: updatedEntries, nextProtocol, lastAuthor: newEntry.author }));
+        }
+      } catch (err) {
+        console.error('Supabase protocol addition error:', err);
+      }
     }
     
     addNotification(entry.origem, `Protocolo #P${data.nextProtocol} registrado com sucesso para ${entry.destino}.`, 'success');
@@ -483,7 +499,7 @@ const App: React.FC = () => {
     setExpandedSection('pre_alerts');
   };
 
-  const handleSendRecado = (recado: Omit<Recado, 'id' | 'timestamp' | 'status'>) => {
+  const handleSendRecado = async (recado: Omit<Recado, 'id' | 'timestamp' | 'status'>) => {
     const newRecado: Recado = {
       ...recado,
       id: crypto.randomUUID(),
@@ -491,66 +507,94 @@ const App: React.FC = () => {
       status: 'pending'
     };
 
-    if (socketRef.current) {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('send_recado', newRecado);
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase recado addition...');
+      const updatedRecados = [newRecado, ...data.recados];
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, recados: updatedRecados }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, recados: updatedRecados }));
+        }
+      } catch (err) {
+        console.error('Supabase recado addition error:', err);
+      }
     }
-
-    setData(prev => ({
-      ...prev,
-      recados: [newRecado, ...prev.recados]
-    }));
 
     addNotification(recado.toUnit, `Novo recado de ${recado.fromUnit}: ${recado.subject}`, 'info');
   };
 
-  const handleSendRecadoResponse = (recadoId: string, response: string) => {
+  const handleSendRecadoResponse = async (recadoId: string, response: string) => {
     const now = new Date().toISOString();
-    
-    setData(prev => {
-      const recado = prev.recados.find(r => r.id === recadoId);
-      if (!recado) return prev;
+    const recado = data.recados.find(r => r.id === recadoId);
+    if (!recado) return;
 
-      if (socketRef.current) {
-        socketRef.current.emit('send_recado_response', {
-          recadoId,
-          response,
-          respondedBy: currentUser,
-          respondedAt: now,
-          fromUnit: recado.fromUnit,
-          toUnit: recado.toUnit
+    const updatedRecados = data.recados.map(r => r.id === recadoId ? {
+      ...r,
+      status: 'responded',
+      response,
+      respondedBy: currentUser,
+      respondedAt: now
+    } : r) as Recado[];
+
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit('send_recado_response', {
+        recadoId,
+        response,
+        respondedBy: currentUser,
+        respondedAt: now,
+        fromUnit: recado.fromUnit,
+        toUnit: recado.toUnit
+      });
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase recado response update...');
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, recados: updatedRecados }, 
+          updated_at: new Date() 
         });
+        if (!error) {
+          setData(prev => ({ ...prev, recados: updatedRecados }));
+        }
+      } catch (err) {
+        console.error('Supabase recado response update error:', err);
       }
+    }
 
-      addNotification(recado.fromUnit, `Resposta recebida de ${recado.toUnit} para o recado: ${recado.subject}`, 'success');
-
-      return {
-        ...prev,
-        recados: prev.recados.map(r => r.id === recadoId ? {
-          ...r,
-          status: 'responded',
-          response,
-          respondedBy: currentUser,
-          respondedAt: now
-        } : r)
-      };
-    });
+    addNotification(recado.fromUnit, `Resposta recebida de ${recado.toUnit} para o recado: ${recado.subject}`, 'success');
   };
 
-  const handleAddAnnouncement = (ann: Omit<Announcement, 'id' | 'timestamp'>) => {
+  const handleAddAnnouncement = async (ann: Omit<Announcement, 'id' | 'timestamp'>) => {
     const newAnn: Announcement = {
       ...ann,
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString()
     };
 
-    if (socketRef.current) {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('send_announcement', newAnn);
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase announcement addition...');
+      const updatedAnnouncements = [newAnn, ...data.announcements];
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, announcements: updatedAnnouncements }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, announcements: updatedAnnouncements }));
+        }
+      } catch (err) {
+        console.error('Supabase announcement addition error:', err);
+      }
     }
-
-    setData(prev => ({
-      ...prev,
-      announcements: [newAnn, ...prev.announcements]
-    }));
 
     ann.taggedUsers.forEach(username => {
       const usersSaved = localStorage.getItem(STORAGE_USERS_KEY);
@@ -566,7 +610,7 @@ const App: React.FC = () => {
     });
   };
 
-  const handleAddIscaControl = (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
+  const handleAddIscaControl = async (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
     const newEntry: LogisticsEntry = {
       ...entry,
       id: crypto.randomUUID(),
@@ -574,8 +618,23 @@ const App: React.FC = () => {
       iscaStatuses: entry.numIsca.map(() => entry.status)
     };
     
-    if (socketRef.current) {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('add_isca_control', newEntry);
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase isca control addition...');
+      const updatedIscaControlEntries = [newEntry, ...data.iscaControlEntries];
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, iscaControlEntries: updatedIscaControlEntries }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, iscaControlEntries: updatedIscaControlEntries }));
+        }
+      } catch (err) {
+        console.error('Supabase isca control addition error:', err);
+      }
     }
 
     addNotification(entry.origem, `Registro de Controle de Isca efetuado para o motorista ${entry.motorista}.`, 'info');
@@ -591,9 +650,25 @@ const App: React.FC = () => {
     }
   };
 
-  const handleUpdateEntry = (id: string, updates: Partial<LogisticsEntry>) => {
-    if (socketRef.current) {
+  const handleUpdateEntry = async (id: string, updates: Partial<LogisticsEntry>) => {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('update_entry', { id, updates });
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase entry update...');
+      const updatedEntries = data.entries.map(e => e.id === id ? { ...e, ...updates } : e);
+      const updatedIscaControlEntries = data.iscaControlEntries.map(e => e.id === id ? { ...e, ...updates } : e);
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, entries: updatedEntries, iscaControlEntries: updatedIscaControlEntries }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, entries: updatedEntries, iscaControlEntries: updatedIscaControlEntries }));
+        }
+      } catch (err) {
+        console.error('Supabase entry update error:', err);
+      }
     }
 
     const allEntries = [...data.entries, ...data.iscaControlEntries];
@@ -617,53 +692,171 @@ const App: React.FC = () => {
     setEditingEntry(null);
   };
 
-  const handleAddUnitTab = (unit: UnitTab) => {
-    if (socketRef.current) {
+  const handleAddUnitTab = async (unit: UnitTab) => {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('add_unit_tab', unit);
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase unit addition...');
+      const updatedUnitTabs = [...data.unitTabs, unit];
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, unitTabs: updatedUnitTabs }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, unitTabs: updatedUnitTabs }));
+          alert("FILIAL ADICIONADA (MODO DIRETO)");
+        }
+      } catch (err) {
+        console.error('Supabase unit addition error:', err);
+      }
     }
   };
 
-  const handleUpdateUnitTab = (id: string, updates: Partial<UnitTab>) => {
-    if (socketRef.current) {
+  const handleUpdateUnitTab = async (id: string, updates: Partial<UnitTab>) => {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('update_unit_tab', { id, updates });
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase unit update...');
+      const updatedUnitTabs = data.unitTabs.map(u => u.id === id ? { ...u, ...updates } : u);
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, unitTabs: updatedUnitTabs }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, unitTabs: updatedUnitTabs }));
+          alert("FILIAL ATUALIZADA (MODO DIRETO)");
+        }
+      } catch (err) {
+        console.error('Supabase unit update error:', err);
+      }
     }
   };
 
-  const handleDeleteEntry = (id: string) => {
+  const handleDeleteEntry = async (id: string) => {
     if (!id) {
       alert('ERRO: ID INVÁLIDO PARA EXCLUSÃO.');
       return;
     }
 
     if (window.confirm('TEM CERTEZA QUE DESEJA EXCLUIR ESTE REGISTRO? ESTA AÇÃO NÃO PODE SER DESFEITA.')) {
-      if (socketRef.current) {
+      if (socketRef.current && socketRef.current.connected) {
         socketRef.current.emit('delete_entry', id);
+      } else if (supabase) {
+        console.log('Socket not connected, performing direct Supabase entry deletion...');
+        const updatedEntries = data.entries.filter(e => e.id !== id);
+        const updatedIscaControlEntries = data.iscaControlEntries.filter(e => e.id !== id);
+        try {
+          const { error } = await supabase.from('app_persistence').upsert({ 
+            key: 'app_data', 
+            content: { ...data, entries: updatedEntries, iscaControlEntries: updatedIscaControlEntries }, 
+            updated_at: new Date() 
+          });
+          if (!error) {
+            setData(prev => ({ ...prev, entries: updatedEntries, iscaControlEntries: updatedIscaControlEntries }));
+            alert("REGISTRO EXCLUÍDO (MODO DIRETO)");
+          }
+        } catch (err) {
+          console.error('Supabase entry deletion error:', err);
+        }
       }
     }
   };
 
-  const handleDeleteUnitTab = (id: string) => {
-    if (socketRef.current) {
+  const handleDeleteUnitTab = async (id: string) => {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('delete_unit_tab', id);
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase unit deletion...');
+      const updatedUnitTabs = data.unitTabs.filter(u => u.id !== id);
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: { ...data, unitTabs: updatedUnitTabs }, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setData(prev => ({ ...prev, unitTabs: updatedUnitTabs }));
+          alert("FILIAL EXCLUÍDA (MODO DIRETO)");
+        }
+      } catch (err) {
+        console.error('Supabase unit deletion error:', err);
+      }
     }
   };
 
-  const handleProfileSave = (updates: Partial<UserAccount>) => {
-    if (socketRef.current) {
+  const handleProfileSave = async (updates: Partial<UserAccount>) => {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('update_user_profile', { username: currentUser, updates });
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase profile update...');
+      const updatedUsers = allUsers.map(u => 
+        u.username.toUpperCase() === currentUser.toUpperCase() ? { ...u, ...updates } : u
+      );
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'users_data', 
+          content: updatedUsers, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setAllUsers(updatedUsers);
+          const current = updatedUsers.find(u => u.username.toUpperCase() === currentUser.toUpperCase());
+          if (current) setUserProfile(current);
+          alert("PERFIL ATUALIZADO (MODO DIRETO)");
+        }
+      } catch (err) {
+        console.error('Supabase profile update error:', err);
+      }
     }
   };
 
-  const deleteUser = (username: string) => {
+  const deleteUser = async (username: string) => {
     const updatedUsers = allUsers.filter(u => u.username !== username);
-    if (socketRef.current) {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('update_all_users', updatedUsers);
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase user deletion...');
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'users_data', 
+          content: updatedUsers, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setAllUsers(updatedUsers);
+          alert("USUÁRIO EXCLUÍDO (MODO DIRETO)");
+        }
+      } catch (err) {
+        console.error('Supabase user deletion error:', err);
+      }
     }
   };
 
-  const saveEditedUser = (username: string, updates: Partial<UserAccount>) => {
-    if (socketRef.current) {
+  const saveEditedUser = async (username: string, updates: Partial<UserAccount>) => {
+    if (socketRef.current && socketRef.current.connected) {
       socketRef.current.emit('update_user_profile', { username, updates });
+    } else if (supabase) {
+      console.log('Socket not connected, performing direct Supabase user edit...');
+      const updatedUsers = allUsers.map(u => 
+        u.username.toUpperCase() === username.toUpperCase() ? { ...u, ...updates } : u
+      );
+      try {
+        const { error } = await supabase.from('app_persistence').upsert({ 
+          key: 'users_data', 
+          content: updatedUsers, 
+          updated_at: new Date() 
+        });
+        if (!error) {
+          setAllUsers(updatedUsers);
+          alert("DADOS DO AGENTE ATUALIZADOS (MODO DIRETO)");
+        }
+      } catch (err) {
+        console.error('Supabase user edit error:', err);
+      }
     }
   };
 
