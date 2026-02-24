@@ -53,7 +53,8 @@ import {
   UserIcon,
   UsersIcon,
   NoteIcon,
-  MenuIcon
+  MenuIcon,
+  TrashIcon
 } from './components/icons';
 
 const STORAGE_KEY = 'pre_alerta_gr_v5_platinum';
@@ -966,6 +967,30 @@ const App: React.FC = () => {
     }));
   };
 
+  const handleClearNotifications = async () => {
+    if (!window.confirm('Deseja realmente apagar todo o histórico de notificações deste terminal?')) return;
+    
+    const notificationsToKeep = data.notifications.filter(n => !userUnits.includes(n.unit));
+    
+    setData(prev => ({
+      ...prev,
+      notifications: notificationsToKeep
+    }));
+
+    if (supabase) {
+      try {
+        const { error } = await supabase
+          .from('notificacoes')
+          .delete()
+          .in('unit', userUnits);
+          
+        if (error) console.error('Error clearing notifications from Supabase:', error);
+      } catch (err) {
+        console.error('Failed to clear notifications:', err);
+      }
+    }
+  };
+
   const NavIcon = ({ type, label, icon: Icon, color = "#C0955C", onClick }: { type: any, label: string, icon: any, color?: string, onClick?: () => void }) => (
     <div className="relative group">
       <button 
@@ -1073,7 +1098,18 @@ const App: React.FC = () => {
             {showNotifications && (
               <div className="absolute top-full right-0 mt-4 w-[280px] md:w-96 bg-[#120A07] border border-roasted-gold/20 rounded-2xl md:rounded-[2rem] shadow-[0_40px_100px_rgba(0,0,0,0.8)] backdrop-blur-2xl overflow-hidden animate-in fade-in slide-in-from-top-4 duration-300">
                 <div className="p-4 md:p-6 border-b border-white/5 bg-white/5 flex justify-between items-center">
-                  <h3 className="text-[9px] md:text-[10px] font-black text-roasted-gold uppercase tracking-widest">Notificações</h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-[9px] md:text-[10px] font-black text-roasted-gold uppercase tracking-widest">Notificações</h3>
+                    {data.notifications.filter(n => userUnits.includes(n.unit)).length > 0 && (
+                      <button 
+                        onClick={handleClearNotifications}
+                        className="p-1.5 rounded-md hover:bg-red-500/10 text-white/20 hover:text-red-500 transition-all group"
+                        title="Apagar Histórico"
+                      >
+                        <TrashIcon className="w-3 h-3 md:w-3.5 md:h-3.5" />
+                      </button>
+                    )}
+                  </div>
                   <button onClick={() => setShowNotifications(false)}><XMarkIcon className="w-4 h-4 text-white/20" /></button>
                 </div>
                 <div className="max-h-[300px] md:max-h-[400px] overflow-y-auto custom-scrollbar">
