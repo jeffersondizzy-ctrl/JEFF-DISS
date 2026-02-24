@@ -167,16 +167,23 @@ const App: React.FC = () => {
           if (messagesError) console.error('Error fetching messages:', messagesError);
 
           if (messagesData) {
-            // Map database fields to ChatMessage type
-            const mappedMessages: ChatMessage[] = messagesData.map(m => ({
-              id: m.id || m.user_id,
-              author: m.user_name,
-              authorUnit: m.authorUnit || 'N/A',
-              text: m.content,
-              timestamp: m.timestamp || new Date().toISOString(),
-              channel: m.channel || 'global',
-              recipient: m.recipient
-            }));
+            // Map database fields to ChatMessage type and filter by privacy
+            const mappedMessages: ChatMessage[] = messagesData
+              .map(m => ({
+                id: m.id || m.user_id,
+                author: m.user_name,
+                authorUnit: m.authorUnit || 'N/A',
+                text: m.content,
+                timestamp: m.timestamp || new Date().toISOString(),
+                channel: m.channel || 'global',
+                recipient: m.recipient
+              }))
+              .filter(m => {
+                const isGlobal = m.channel === 'global';
+                const isUnit = m.channel === 'unit' && (m.authorUnit === currentUserUnit || m.recipient === currentUserUnit);
+                const isPrivate = m.channel === 'private' && (m.recipient === currentUser || m.author === currentUser);
+                return isGlobal || isUnit || isPrivate;
+              });
             setData(prev => ({ ...prev, messages: mappedMessages }));
           }
           
@@ -247,16 +254,16 @@ const App: React.FC = () => {
           setData(prev => {
             if (prev.messages.some(m => m.id === newMessage.id)) return prev;
             
+            const isGlobal = newMessage.channel === 'global';
+            const isUnit = newMessage.channel === 'unit' && (newMessage.authorUnit === currentUserUnitRef.current || newMessage.recipient === currentUserUnitRef.current);
+            const isPrivate = newMessage.channel === 'private' && (newMessage.recipient === currentUserRef.current || newMessage.author === currentUserRef.current);
+            
+            // Se a mensagem não for para este usuário, ignoramos completamente (Privacidade)
+            if (!isGlobal && !isUnit && !isPrivate) return prev;
+
             // Increment unread count if not in chat section
             if (expandedSectionRef.current !== 'chat') {
-              // Only count messages that are relevant to the user
-              const isGlobal = newMessage.channel === 'global';
-              const isUnit = newMessage.channel === 'unit' && (newMessage.authorUnit === currentUserUnitRef.current || newMessage.recipient === currentUserUnitRef.current);
-              const isPrivate = newMessage.channel === 'private' && newMessage.recipient === currentUserRef.current;
-              
-              if (isGlobal || isUnit || isPrivate) {
-                setUnreadChatCount(c => c + 1);
-              }
+              setUnreadChatCount(c => c + 1);
             }
             
             return { ...prev, messages: [...prev.messages, newMessage] };
@@ -1047,19 +1054,27 @@ const App: React.FC = () => {
 
     // Instant Supabase path
     if (supabase && isSupabaseConfigured) {
-      // Simplificando o envio para o banco de dados conforme solicitado
-      // Enviando APENAS content e user_name para evitar erros de restrição de user_id
+      // Incluindo campos de canal e destinatário para permitir a privacidade das mensagens
       const dbMessage = {
         content: text,
-        user_name: currentUser || 'Anônimo'
+        user_name: currentUser || 'Anônimo',
+        authorUnit: currentUserUnit,
+        channel: channel,
+        recipient: recipient || null
       };
 
-      console.log('Tentando enviar mensagem para Supabase:', dbMessage);
+      console.log('Tentando enviar mensagem (com privacidade) para Supabase:', dbMessage);
 
       supabase.from('messages').insert([dbMessage]).then(({ error, data }) => {
         if (error) {
           console.error('Erro detalhado no insert do Supabase:', error);
-          alert(`ERRO SUPABASE (${error.code}): ${error.message}\n\nVerifique se a tabela 'messages' possui as colunas 'content' e 'user_name'.`);
+          // Se falhar por causa de colunas ausentes, tentamos o modo simplificado como fallback
+          if (error.code === '42703') { // Undefined column
+             console.warn('Colunas de privacidade ausentes no banco. Enviando em modo simplificado.');
+             supabase.from('messages').insert([{ content: text, user_name: currentUser || 'Anônimo' }]);
+          } else {
+             alert(`ERRO SUPABASE (${error.code}): ${error.message}`);
+          }
         } else {
           console.log('Mensagem gravada com sucesso no Supabase:', data);
         }
