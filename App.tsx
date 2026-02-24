@@ -138,6 +138,17 @@ const App: React.FC = () => {
           if (notesData) setNotesData(notesData);
           if (reviewsData) setReviewsData(reviewsData);
           
+          // Also fetch latest messages directly from the dedicated table
+          const { data: messagesData } = await supabase
+            .from('mensagens')
+            .select('*')
+            .order('timestamp', { ascending: true })
+            .limit(100);
+            
+          if (messagesData) {
+            setData(prev => ({ ...prev, messages: messagesData }));
+          }
+          
           console.log('Supabase fallback load successful');
           setIsDataLoaded(true);
         }
@@ -176,6 +187,21 @@ const App: React.FC = () => {
             return { ...prev, notifications: [newNotif, ...prev.notifications] };
           });
         })
+        .on('postgres_changes', { event: 'DELETE', table: 'notificacoes' }, (payload) => {
+          // If we have the ID, we can filter it out. 
+          // Note: payload.old might only contain the ID depending on Supabase replica identity
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setData(prev => ({
+              ...prev,
+              notifications: prev.notifications.filter(n => n.id !== deletedId)
+            }));
+          } else {
+            // If no ID (bulk delete), we might need a different strategy or just rely on app_data sync
+            // For now, if it's a bulk delete by unit, we might not get individual IDs easily here
+            // unless replica identity is set to FULL.
+          }
+        })
         .on('postgres_changes', { event: 'INSERT', table: 'mensagens' }, (payload) => {
           const newMessage = payload.new as ChatMessage;
           setData(prev => {
@@ -191,11 +217,13 @@ const App: React.FC = () => {
           }));
         })
         .on('postgres_changes', { event: 'DELETE', table: 'mensagens' }, (payload) => {
-          const deletedId = payload.old.id;
-          setData(prev => ({
-            ...prev,
-            messages: prev.messages.filter(m => m.id !== deletedId)
-          }));
+          const deletedId = payload.old?.id;
+          if (deletedId) {
+            setData(prev => ({
+              ...prev,
+              messages: prev.messages.filter(m => m.id !== deletedId)
+            }));
+          }
         })
         .subscribe();
     }
@@ -517,10 +545,25 @@ const App: React.FC = () => {
       socketRef.current.emit('send_notification', newNotif);
     }
 
-    setData(prev => ({
-      ...prev,
-      notifications: [newNotif, ...prev.notifications]
-    }));
+    setData(prev => {
+      const updatedData = {
+        ...prev,
+        notifications: [newNotif, ...prev.notifications]
+      };
+      
+      // Persist to app_persistence blob as well
+      if (supabase) {
+        supabase.from('app_persistence').upsert({
+          key: 'app_data',
+          content: updatedData,
+          updated_at: new Date()
+        }).then(({ error }) => {
+          if (error) console.error('Error persisting app_data with new notification:', error);
+        });
+      }
+      
+      return updatedData;
+    });
   };
 
   const handleAddProtocol = async (entry: Omit<LogisticsEntry, 'id' | 'timestamp' | 'protocol'>) => {
@@ -960,31 +1003,59 @@ const App: React.FC = () => {
   const userUnits = userProfile.units || [currentUserUnit];
   const unreadCount = data.notifications.filter(n => !n.read && userUnits.includes(n.unit)).length;
 
-  const markAllNotificationsAsRead = () => {
-    setData(prev => ({
-      ...prev,
-      notifications: prev.notifications.map(n => userUnits.includes(n.unit) ? { ...n, read: true } : n)
-    }));
+  const markAllNotificationsAsRead = async () => {
+    const updatedNotifications = data.notifications.map(n => userUnits.includes(n.unit) ? { ...n, read: true } : n);
+    const updatedData = {
+      ...data,
+      notifications: updatedNotifications
+    };
+    
+    setData(updatedData);
+
+    if (supabase) {
+      try {
+        await supabase.from('app_persistence').upsert({ 
+          key: 'app_data', 
+          content: updatedData, 
+          updated_at: new Date() 
+        });
+      } catch (err) {
+        console.error('Error persisting read notifications:', err);
+      }
+    }
   };
 
   const handleClearNotifications = async () => {
     if (!window.confirm('Deseja realmente apagar todo o histórico de notificações deste terminal?')) return;
     
     const notificationsToKeep = data.notifications.filter(n => !userUnits.includes(n.unit));
-    
-    setData(prev => ({
-      ...prev,
+    const updatedData = {
+      ...data,
       notifications: notificationsToKeep
-    }));
+    };
+    
+    setData(updatedData);
 
     if (supabase) {
       try {
-        const { error } = await supabase
+        // 1. Clear from dedicated table
+        const { error: tableError } = await supabase
           .from('notificacoes')
           .delete()
           .in('unit', userUnits);
           
-        if (error) console.error('Error clearing notifications from Supabase:', error);
+        if (tableError) console.error('Error clearing notifications table:', tableError);
+
+        // 2. Persist updated app_data blob
+        const { error: persistenceError } = await supabase
+          .from('app_persistence')
+          .upsert({ 
+            key: 'app_data', 
+            content: updatedData, 
+            updated_at: new Date() 
+          });
+          
+        if (persistenceError) console.error('Error persisting app_data after clear:', persistenceError);
       } catch (err) {
         console.error('Failed to clear notifications:', err);
       }
