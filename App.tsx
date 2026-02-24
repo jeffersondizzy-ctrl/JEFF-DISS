@@ -67,6 +67,25 @@ const App: React.FC = () => {
   const [userProfile, setUserProfile] = useState<Partial<UserAccount>>({});
   const [birthdayCelebrant, setBirthdayCelebrant] = useState<UserAccount | null>(null);
   const [expandedSection, setExpandedSection] = useState<'none' | 'new' | 'stats' | 'history' | 'isca_control' | 'iscas' | 'map' | 'chat' | 'founder' | 'search' | 'transmission' | 'email' | 'billing' | 'pre_alerts' | 'settings' | 'notes' | 'agents' | 'announcements' | 'recados' | 'logout'>('none');
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const expandedSectionRef = useRef(expandedSection);
+  const currentUserRef = useRef(currentUser);
+  const currentUserUnitRef = useRef(currentUserUnit);
+
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
+  useEffect(() => {
+    currentUserUnitRef.current = currentUserUnit;
+  }, [currentUserUnit]);
+
+  useEffect(() => {
+    expandedSectionRef.current = expandedSection;
+    if (expandedSection === 'chat') {
+      setUnreadChatCount(0);
+    }
+  }, [expandedSection]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [data, setData] = useState<AppData>({ 
@@ -217,16 +236,29 @@ const App: React.FC = () => {
         .on('postgres_changes', { event: 'INSERT', table: 'messages' }, (payload) => {
           const raw = payload.new;
           const newMessage: ChatMessage = {
-            id: raw.id || raw.user_id,
-            author: raw.user_name,
+            id: raw.id || raw.user_id || crypto.randomUUID(),
+            author: raw.user_name || 'Anônimo',
             authorUnit: raw.authorUnit || 'N/A',
-            text: raw.content,
+            text: raw.content || '',
             timestamp: raw.timestamp || new Date().toISOString(),
             channel: raw.channel || 'global',
             recipient: raw.recipient
           };
           setData(prev => {
             if (prev.messages.some(m => m.id === newMessage.id)) return prev;
+            
+            // Increment unread count if not in chat section
+            if (expandedSectionRef.current !== 'chat') {
+              // Only count messages that are relevant to the user
+              const isGlobal = newMessage.channel === 'global';
+              const isUnit = newMessage.channel === 'unit' && (newMessage.authorUnit === currentUserUnitRef.current || newMessage.recipient === currentUserUnitRef.current);
+              const isPrivate = newMessage.channel === 'private' && newMessage.recipient === currentUserRef.current;
+              
+              if (isGlobal || isUnit || isPrivate) {
+                setUnreadChatCount(c => c + 1);
+              }
+            }
+            
             return { ...prev, messages: [...prev.messages, newMessage] };
           });
         })
@@ -1015,17 +1047,22 @@ const App: React.FC = () => {
 
     // Instant Supabase path
     if (supabase && isSupabaseConfigured) {
-      supabase.from('messages').insert([{
+      // Simplificando o envio para o banco de dados
+      const dbMessage = {
         content: text,
-        user_name: currentUser,
-        user_id: newMessage.id
-      }]).then(({ error }) => {
+        user_name: currentUser || 'Anônimo'
+      };
+
+      supabase.from('messages').insert([dbMessage]).then(({ error }) => {
         if (error) {
           console.error('Supabase message insert error:', error);
+          alert('ERRO AO ENVIAR PARA SUPABASE: ' + error.message);
+        } else {
+          console.log('Mensagem enviada com sucesso para o Supabase');
         }
       });
     } else if (!isSupabaseConfigured) {
-      console.warn('Supabase not configured. Message saved locally only.');
+      console.warn('Supabase não configurado. Verifique as chaves VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
     }
 
     if (socketRef.current) {
@@ -1102,6 +1139,11 @@ const App: React.FC = () => {
 
   const NavIcon = ({ type, label, icon: Icon, color = "#C0955C", onClick }: { type: any, label: string, icon: any, color?: string, onClick?: () => void }) => (
     <div className="relative group">
+      {type === 'chat' && unreadChatCount > 0 && (
+        <div className="absolute -top-1 -right-1 md:-top-2 md:-right-2 z-20 min-w-[20px] h-5 md:min-w-[32px] md:h-8 bg-red-600 text-white rounded-lg flex items-center justify-center border-2 md:border-4 border-[#120A07] shadow-xl animate-in zoom-in duration-300 px-1">
+          <span className="text-[9px] md:text-xs font-black">{unreadChatCount}</span>
+        </div>
+      )}
       <button 
         onClick={() => {
           if (type && type !== 'logout') setExpandedSection(type);
@@ -1349,6 +1391,7 @@ const App: React.FC = () => {
                 onDeleteEntry={handleDeleteEntry}
                 onEditEntry={(entry) => setEditingEntry(entry)} 
                 currentUser={currentUser} 
+                currentUserUnit={currentUserUnit}
               />
             </div>
           )}

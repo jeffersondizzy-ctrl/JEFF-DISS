@@ -40,10 +40,10 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
         (payload) => {
           const raw = payload.new;
           const newMessage: ChatMessage = {
-            id: raw.id || raw.user_id,
-            author: raw.user_name,
+            id: raw.id || raw.user_id || crypto.randomUUID(),
+            author: raw.user_name || 'Anônimo',
             authorUnit: raw.authorUnit || 'N/A',
-            text: raw.content,
+            text: raw.content || '',
             timestamp: raw.timestamp || new Date().toISOString(),
             channel: raw.channel || 'global',
             recipient: raw.recipient

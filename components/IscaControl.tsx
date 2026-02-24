@@ -31,6 +31,7 @@ interface IscaControlProps {
   unitTabs: UnitTab[];
   onAddUnitTab: (unit: UnitTab) => void;
   currentUser: string;
+  currentUserUnit: string;
 }
 
 const inputStyle = "w-full bg-black/40 border border-roasted-gold/20 rounded-xl px-5 py-4 text-sm focus:border-roasted-gold outline-none transition-all placeholder:text-white/10 text-white font-bold uppercase tracking-wider";
@@ -58,12 +59,14 @@ const IscaControl: React.FC<IscaControlProps> = ({
   iscaControlEntries, 
   unitTabs, 
   onAddUnitTab, 
-  currentUser 
+  currentUser,
+  currentUserUnit
 }) => {
   const [activeUnit, setActiveUnit] = useState<UnitTab | null>(null);
   const [showUnlockModal, setShowUnlockModal] = useState<UnitTab | null>(null);
   const [unlockPassword, setUnlockPassword] = useState('');
   const [unlockError, setUnlockError] = useState(false);
+  const [showOnlyMyUnit, setShowOnlyMyUnit] = useState(false);
   
   // Edit State Completo
   const [activeSubTab, setActiveSubTab] = useState<'patrimonio' | 'disponiveis'>('patrimonio');
@@ -219,10 +222,12 @@ const IscaControl: React.FC<IscaControlProps> = ({
       });
     });
 
-    return Object.values(inventory).filter(item => 
-      item.id.includes(searchTerm.toUpperCase())
-    ).sort((a, b) => b.id.localeCompare(a.id));
-  }, [entries, iscaControlEntries, activeUnit, searchTerm, activeSubTab]);
+    return Object.values(inventory).filter(item => {
+      const matchesSearch = item.id.includes(searchTerm.toUpperCase());
+      const matchesUnitFilter = !showOnlyMyUnit || (item.owner?.toUpperCase() === currentUserUnit.toUpperCase());
+      return matchesSearch && matchesUnitFilter;
+    }).sort((a, b) => b.id.localeCompare(a.id));
+  }, [entries, iscaControlEntries, activeUnit, searchTerm, activeSubTab, showOnlyMyUnit, currentUserUnit]);
 
   const statusStats = useMemo(() => {
     const stats: Record<string, number> = {
@@ -383,8 +388,20 @@ const IscaControl: React.FC<IscaControlProps> = ({
             </button>
           </div>
           
-          <div className="flex justify-between items-center flex-1 w-full md:w-auto">
-            <h4 className="text-xs font-black text-roasted-gold/60 uppercase tracking-[0.5em]">{activeSubTab === 'patrimonio' ? 'Inventário Patrimonial' : 'Iscas no Local'} • {myIscas.length} Itens</h4>
+          <div className="flex justify-between items-center flex-1 w-full md:w-auto gap-4">
+            <div className="flex items-center gap-2 bg-black/40 px-4 py-2 rounded-xl border border-white/5">
+              <input 
+                type="checkbox" 
+                id="myUnitFilter"
+                checked={showOnlyMyUnit}
+                onChange={(e) => setShowOnlyMyUnit(e.target.checked)}
+                className="w-4 h-4 accent-roasted-gold cursor-pointer"
+              />
+              <label htmlFor="myUnitFilter" className="text-[9px] font-black text-white/60 uppercase tracking-widest cursor-pointer select-none">
+                Apenas Minha Unidade ({currentUserUnit})
+              </label>
+            </div>
+            <h4 className="text-xs font-black text-roasted-gold/60 uppercase tracking-[0.5em] hidden lg:block">{activeSubTab === 'patrimonio' ? 'Inventário Patrimonial' : 'Iscas no Local'} • {myIscas.length} Itens</h4>
             <div className="relative w-72">
               <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
               <input 
