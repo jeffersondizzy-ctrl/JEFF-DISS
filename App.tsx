@@ -5,7 +5,7 @@
 */
 import React, { useState, useEffect, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { supabase } from './supabaseClient';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { AppState, LogisticsEntry, AppData, OperationStatus, ChatMessage, CriticalAlert, UnitTab, Notification, UserAccount, VehicleType, LoadingPosition, Announcement, Recado } from './types';
 import LogisticsForm from './components/LogisticsForm';
 import HistoryTable from './components/HistoryTable';
@@ -139,14 +139,26 @@ const App: React.FC = () => {
           if (reviewsData) setReviewsData(reviewsData);
           
           // Also fetch latest messages directly from the dedicated table
-          const { data: messagesData } = await supabase
-            .from('mensagens')
+          const { data: messagesData, error: messagesError } = await supabase
+            .from('messages')
             .select('*')
             .order('timestamp', { ascending: true })
             .limit(100);
             
+          if (messagesError) console.error('Error fetching messages:', messagesError);
+
           if (messagesData) {
-            setData(prev => ({ ...prev, messages: messagesData }));
+            // Map database fields to ChatMessage type
+            const mappedMessages: ChatMessage[] = messagesData.map(m => ({
+              id: m.id || m.user_id,
+              author: m.user_name,
+              authorUnit: m.authorUnit || 'N/A',
+              text: m.content,
+              timestamp: m.timestamp || new Date().toISOString(),
+              channel: m.channel || 'global',
+              recipient: m.recipient
+            }));
+            setData(prev => ({ ...prev, messages: mappedMessages }));
           }
           
           console.log('Supabase fallback load successful');
@@ -202,21 +214,39 @@ const App: React.FC = () => {
             // unless replica identity is set to FULL.
           }
         })
-        .on('postgres_changes', { event: 'INSERT', table: 'mensagens' }, (payload) => {
-          const newMessage = payload.new as ChatMessage;
+        .on('postgres_changes', { event: 'INSERT', table: 'messages' }, (payload) => {
+          const raw = payload.new;
+          const newMessage: ChatMessage = {
+            id: raw.id || raw.user_id,
+            author: raw.user_name,
+            authorUnit: raw.authorUnit || 'N/A',
+            text: raw.content,
+            timestamp: raw.timestamp || new Date().toISOString(),
+            channel: raw.channel || 'global',
+            recipient: raw.recipient
+          };
           setData(prev => {
             if (prev.messages.some(m => m.id === newMessage.id)) return prev;
             return { ...prev, messages: [...prev.messages, newMessage] };
           });
         })
-        .on('postgres_changes', { event: 'UPDATE', table: 'mensagens' }, (payload) => {
-          const updatedMessage = payload.new as ChatMessage;
+        .on('postgres_changes', { event: 'UPDATE', table: 'messages' }, (payload) => {
+          const raw = payload.new;
+          const updatedMessage: ChatMessage = {
+            id: raw.id || raw.user_id,
+            author: raw.user_name,
+            authorUnit: raw.authorUnit || 'N/A',
+            text: raw.content,
+            timestamp: raw.timestamp || new Date().toISOString(),
+            channel: raw.channel || 'global',
+            recipient: raw.recipient
+          };
           setData(prev => ({
             ...prev,
             messages: prev.messages.map(m => m.id === updatedMessage.id ? updatedMessage : m)
           }));
         })
-        .on('postgres_changes', { event: 'DELETE', table: 'mensagens' }, (payload) => {
+        .on('postgres_changes', { event: 'DELETE', table: 'messages' }, (payload) => {
           const deletedId = payload.old?.id;
           if (deletedId) {
             setData(prev => ({
@@ -984,10 +1014,18 @@ const App: React.FC = () => {
     };
 
     // Instant Supabase path
-    if (supabase) {
-      supabase.from('mensagens').insert([newMessage]).then(({ error }) => {
-        if (error) console.error('Supabase message insert error:', error);
+    if (supabase && isSupabaseConfigured) {
+      supabase.from('messages').insert([{
+        content: text,
+        user_name: currentUser,
+        user_id: newMessage.id
+      }]).then(({ error }) => {
+        if (error) {
+          console.error('Supabase message insert error:', error);
+        }
       });
+    } else if (!isSupabaseConfigured) {
+      console.warn('Supabase not configured. Message saved locally only.');
     }
 
     if (socketRef.current) {

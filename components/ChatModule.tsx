@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChatMessage, City, CITIES, UserAccount } from '../types';
 import { SendIcon, GlobeIcon, DatabaseIcon, UserIcon, SearchIcon, XMarkIcon, ChevronRightIcon } from './icons';
-import { supabase } from '../supabaseClient';
+import { supabase, isSupabaseConfigured } from '../supabaseClient';
 
 interface ChatModuleProps {
   messages: ChatMessage[];
@@ -36,9 +36,18 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
       .channel('messages')
       .on(
         'postgres_changes',
-        { event: 'INSERT', table: 'mensagens' },
+        { event: 'INSERT', table: 'messages' },
         (payload) => {
-          const newMessage = payload.new as ChatMessage;
+          const raw = payload.new;
+          const newMessage: ChatMessage = {
+            id: raw.id || raw.user_id,
+            author: raw.user_name,
+            authorUnit: raw.authorUnit || 'N/A',
+            text: raw.content,
+            timestamp: raw.timestamp || new Date().toISOString(),
+            channel: raw.channel || 'global',
+            recipient: raw.recipient
+          };
           setRealtimeMessages(prev => {
             if (prev.some(m => m.id === newMessage.id)) return prev;
             return [...prev, newMessage];
@@ -47,15 +56,24 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
       )
       .on(
         'postgres_changes',
-        { event: 'UPDATE', table: 'mensagens' },
+        { event: 'UPDATE', table: 'messages' },
         (payload) => {
-          const updatedMessage = payload.new as ChatMessage;
+          const raw = payload.new;
+          const updatedMessage: ChatMessage = {
+            id: raw.id || raw.user_id,
+            author: raw.user_name,
+            authorUnit: raw.authorUnit || 'N/A',
+            text: raw.content,
+            timestamp: raw.timestamp || new Date().toISOString(),
+            channel: raw.channel || 'global',
+            recipient: raw.recipient
+          };
           setRealtimeMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
         }
       )
       .on(
         'postgres_changes',
-        { event: 'DELETE', table: 'mensagens' },
+        { event: 'DELETE', table: 'messages' },
         (payload) => {
           const deletedId = payload.old.id;
           setRealtimeMessages(prev => prev.filter(m => m.id !== deletedId));
@@ -299,6 +317,14 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-10 space-y-6 md:space-y-8 custom-scrollbar">
+          {!isSupabaseConfigured && (
+            <div className="bg-red-500/20 border border-red-500/50 p-4 rounded-xl mb-6 animate-pulse">
+              <p className="text-[10px] font-black text-red-500 uppercase tracking-widest text-center">
+                ⚠️ SUPABASE NÃO CONFIGURADO: AS MENSAGENS NÃO SERÃO SALVAS NO BANCO DE DADOS. 
+                VERIFIQUE AS CHAVES VITE_SUPABASE_URL E VITE_SUPABASE_ANON_KEY.
+              </p>
+            </div>
+          )}
           {filteredMessages.map((msg, idx) => (
             <div key={msg.id} className={`flex flex-col ${msg.author === currentUser ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-4`} style={{ animationDelay: `${idx * 20}ms` }}>
               <div className="flex items-center gap-2 md:gap-3 mb-1.5 md:mb-2 px-1">
