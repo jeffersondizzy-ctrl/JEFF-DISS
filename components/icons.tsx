@@ -48,12 +48,17 @@ import {
   MessageCircle,
   Cake,
   Video,
-  VideoOff
+  VideoOff,
+  Menu
 } from 'lucide-react';
 
 const defaultProps = {
   strokeWidth: 2,
 };
+
+export const MenuIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <Menu {...defaultProps} {...props} />
+);
 
 export const VideoIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <Video {...defaultProps} {...props} />

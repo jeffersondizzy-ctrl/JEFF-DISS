@@ -52,7 +52,8 @@ import {
   SettingsIcon,
   UserIcon,
   UsersIcon,
-  NoteIcon
+  NoteIcon,
+  MenuIcon
 } from './components/icons';
 
 const STORAGE_KEY = 'pre_alerta_gr_v5_platinum';
@@ -66,6 +67,7 @@ const App: React.FC = () => {
   const [birthdayCelebrant, setBirthdayCelebrant] = useState<UserAccount | null>(null);
   const [expandedSection, setExpandedSection] = useState<'none' | 'new' | 'stats' | 'history' | 'isca_control' | 'iscas' | 'map' | 'chat' | 'founder' | 'search' | 'transmission' | 'email' | 'billing' | 'pre_alerts' | 'settings' | 'notes' | 'agents' | 'announcements' | 'recados' | 'logout'>('none');
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [data, setData] = useState<AppData>({ 
     entries: [], 
     iscaControlEntries: [], 
@@ -88,6 +90,12 @@ const App: React.FC = () => {
   const [allUsers, setAllUsers] = useState<UserAccount[]>([]);
   const [notesData, setNotesData] = useState<Record<string, UserNote[]>>({});
   const [reviewsData, setReviewsData] = useState<any[]>([]);
+
+  useEffect(() => {
+    const handleBack = () => setExpandedSection('none');
+    window.addEventListener('back-to-menu', handleBack);
+    return () => window.removeEventListener('back-to-menu', handleBack);
+  }, []);
 
   useEffect(() => {
     const sessionUser = sessionStorage.getItem('active_session_user');
@@ -947,7 +955,10 @@ const App: React.FC = () => {
   const NavIcon = ({ type, label, icon: Icon, color = "#C0955C", onClick }: { type: any, label: string, icon: any, color?: string, onClick?: () => void }) => (
     <div className="relative group">
       <button 
-        onClick={onClick ? onClick : () => setExpandedSection(type)}
+        onClick={() => {
+          if (type && type !== 'logout') setExpandedSection(type);
+          if (onClick) onClick();
+        }}
         className="w-full p-4 md:p-8 flex flex-col items-center gap-3 md:gap-6 rounded-2xl md:rounded-[2.5rem] transition-all duration-500 bg-white/[0.01] border border-white/[0.03] hover:bg-roasted-gold/[0.05] hover:border-roasted-gold/30 hover:shadow-[0_20px_50px_rgba(192,149,92,0.1)] md:hover:-translate-y-1"
       >
         <div 
@@ -1012,7 +1023,7 @@ const App: React.FC = () => {
   return (
     <div className={`min-h-screen bg-[#120A07] text-[#f8fafc] relative selection:bg-roasted-gold selection:text-espresso-dark overflow-hidden`}>
       <header className="fixed top-0 left-0 right-0 z-[120] px-4 md:px-16 py-4 md:py-8 flex justify-between items-center bg-[#120A07]/80 backdrop-blur-3xl border-b border-roasted-gold/10">
-        <div className="flex items-center gap-4 md:gap-8 cursor-pointer group" onClick={() => setExpandedSection('none')}>
+        <div className="flex items-center gap-4 md:gap-8 cursor-pointer group" onClick={() => { setExpandedSection('none'); setShowMobileMenu(false); }}>
           <Logo3D className="w-10 h-10 md:w-14 md:h-14" />
           <div className="border-l-2 border-roasted-gold/20 pl-4 md:pl-8">
             <h1 className="text-xl md:text-3xl font-black tracking-tighter italic uppercase text-roasted-gold brand-text">PRÉ ALERTA</h1>
@@ -1023,10 +1034,10 @@ const App: React.FC = () => {
           </div>
         </div>
         
-        <div className="flex items-center gap-3 md:gap-6">
+        <div className="flex items-center gap-2 md:gap-6">
           <button 
-            onClick={() => setExpandedSection('chat')}
-            className={`p-2.5 md:p-3 rounded-lg md:rounded-xl border transition-all relative bg-white/5 border-white/10 text-roasted-gold hover:border-roasted-gold/50`}
+            onClick={() => { setExpandedSection('chat'); setShowMobileMenu(false); }}
+            className={`p-2.5 md:p-3 rounded-lg md:rounded-xl border transition-all relative bg-white/5 border-white/10 text-roasted-gold hover:border-roasted-gold/50 ${expandedSection === 'chat' ? 'border-roasted-gold bg-roasted-gold/10' : ''}`}
             title="Chat de Operações"
           >
             <MessageSquareIcon className="w-5 h-5 md:w-6 md:h-6" />
@@ -1034,7 +1045,7 @@ const App: React.FC = () => {
 
           <div className="relative" ref={bellRef}>
             <button 
-              onClick={() => { setShowNotifications(!showNotifications); if(!showNotifications) markAllNotificationsAsRead(); }} 
+              onClick={() => { setShowNotifications(!showNotifications); if(!showNotifications) markAllNotificationsAsRead(); setShowMobileMenu(false); }} 
               className={`p-2.5 md:p-3 rounded-lg md:rounded-xl border transition-all relative ${unreadCount > 0 ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-white/5 border-white/10 text-roasted-gold'}`}
             >
               <BellIcon className={`w-5 h-5 md:w-6 md:h-6 ${unreadCount > 0 ? 'animate-bounce' : ''}`} />
@@ -1077,9 +1088,16 @@ const App: React.FC = () => {
             )}
           </div>
 
+          <button 
+            onClick={() => setShowMobileMenu(!showMobileMenu)}
+            className="md:hidden p-2.5 rounded-lg border border-white/10 bg-white/5 text-roasted-gold min-w-[44px] min-h-[44px] flex items-center justify-center"
+          >
+            {showMobileMenu ? <XMarkIcon className="w-5 h-5" /> : <MenuIcon className="w-5 h-5" />}
+          </button>
+
           <div 
-            onClick={() => setExpandedSection('settings')}
-            className="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl border border-white/10 overflow-hidden bg-black/40 cursor-pointer hover:border-roasted-gold transition-all flex items-center justify-center group"
+            onClick={() => { setExpandedSection('settings'); setShowMobileMenu(false); }}
+            className="hidden md:flex w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl border border-white/10 overflow-hidden bg-black/40 cursor-pointer hover:border-roasted-gold transition-all items-center justify-center group"
           >
             {userProfile.profilePic ? (
               <img src={userProfile.profilePic} className="w-full h-full object-cover" />
@@ -1090,7 +1108,35 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      <main ref={mainRef} className="pt-28 md:pt-48 pb-20 md:pb-48 px-4 md:px-16 max-w-full relative z-10">
+      {/* Mobile Menu Overlay */}
+      {showMobileMenu && (
+        <div className="fixed inset-0 z-[115] bg-[#120A07] pt-28 px-6 animate-in fade-in slide-in-from-right duration-300 md:hidden overflow-y-auto pb-20">
+          <div className="grid grid-cols-2 gap-4">
+            <NavIcon type="new" label="Envio" icon={PlusIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="isca_control" label="Controle" icon={SparklesIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="pre_alerts" label="Histórico" icon={ClipboardIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="chat" label="Chat" icon={MessageSquareIcon} color="#64ffda" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="billing" label="Cobranças" icon={AlertIcon} color="#ef4444" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="announcements" label="Comunicados" icon={MailIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="stats" label="Dados" icon={SlidersHorizontalIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="agents" label="Agentes" icon={UsersIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="notes" label="Notas" icon={NoteIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="settings" label="Config" icon={SettingsIcon} color="#C0955C" onClick={() => setShowMobileMenu(false)} />
+            <NavIcon type="logout" label="Sair" icon={LogOutIcon} color="#ef4444" onClick={() => { handleLogout(); setShowMobileMenu(false); }} />
+          </div>
+          <div className="mt-12 p-6 border-t border-white/5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl border border-roasted-gold/20 overflow-hidden">
+              {userProfile.profilePic ? <img src={userProfile.profilePic} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-roasted-gold/10 flex items-center justify-center text-roasted-gold font-black">{currentUser[0]}</div>}
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-white uppercase tracking-widest">{currentUser}</p>
+              <p className="text-[8px] font-black text-roasted-gold/60 uppercase tracking-widest">{currentUserUnit}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main ref={mainRef} className={`pt-24 md:pt-48 pb-20 md:pb-48 px-4 md:px-16 max-w-full relative z-10 ${expandedSection === 'chat' ? 'md:pt-48 pt-20 px-0 md:px-16' : ''}`}>
         {expandedSection === 'none' && (
           <div className="animate-in fade-in zoom-in-95 duration-1000 relative">
             <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-11 gap-3 md:gap-6">
@@ -1125,7 +1171,12 @@ const App: React.FC = () => {
         )}
 
         <div className="space-y-8 md:space-y-16">
-          {expandedSection !== 'none' && <BackToMenu />}
+          {expandedSection !== 'none' && expandedSection !== 'chat' && <BackToMenu />}
+          {expandedSection === 'chat' && (
+            <div className="hidden md:block">
+              <BackToMenu />
+            </div>
+          )}
           {expandedSection === 'isca_control' && (
             <div className="coffee-panel p-6 md:p-20 animate-in slide-in-from-bottom-10">
               <IscaControl 
