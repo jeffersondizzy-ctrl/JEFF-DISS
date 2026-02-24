@@ -159,6 +159,21 @@ const App: React.FC = () => {
           if (key === 'notes_data') setNotesData(content);
           if (key === 'reviews_data') setReviewsData(content);
         })
+        // Instant updates for notifications and messages via dedicated tables
+        .on('postgres_changes', { event: 'INSERT', table: 'notificacoes' }, (payload) => {
+          const newNotif = payload.new as Notification;
+          setData(prev => {
+            if (prev.notifications.some(n => n.id === newNotif.id)) return prev;
+            return { ...prev, notifications: [newNotif, ...prev.notifications] };
+          });
+        })
+        .on('postgres_changes', { event: 'INSERT', table: 'mensagens' }, (payload) => {
+          const newMessage = payload.new as ChatMessage;
+          setData(prev => {
+            if (prev.messages.some(m => m.id === newMessage.id)) return prev;
+            return { ...prev, messages: [...prev.messages, newMessage] };
+          });
+        })
         .subscribe();
     }
 
@@ -467,6 +482,13 @@ const App: React.FC = () => {
       read: false,
       type
     };
+
+    // Instant Supabase path
+    if (supabase) {
+      supabase.from('notificacoes').insert([newNotif]).then(({ error }) => {
+        if (error) console.error('Supabase notification insert error:', error);
+      });
+    }
 
     if (socketRef.current) {
       socketRef.current.emit('send_notification', newNotif);
@@ -894,6 +916,13 @@ const App: React.FC = () => {
       channel,
       recipient
     };
+
+    // Instant Supabase path
+    if (supabase) {
+      supabase.from('mensagens').insert([newMessage]).then(({ error }) => {
+        if (error) console.error('Supabase message insert error:', error);
+      });
+    }
 
     if (socketRef.current) {
       socketRef.current.emit('send_message', newMessage);
