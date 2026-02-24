@@ -182,6 +182,20 @@ const App: React.FC = () => {
             return { ...prev, messages: [...prev.messages, newMessage] };
           });
         })
+        .on('postgres_changes', { event: 'UPDATE', table: 'mensagens' }, (payload) => {
+          const updatedMessage = payload.new as ChatMessage;
+          setData(prev => ({
+            ...prev,
+            messages: prev.messages.map(m => m.id === updatedMessage.id ? updatedMessage : m)
+          }));
+        })
+        .on('postgres_changes', { event: 'DELETE', table: 'mensagens' }, (payload) => {
+          const deletedId = payload.old.id;
+          setData(prev => ({
+            ...prev,
+            messages: prev.messages.filter(m => m.id !== deletedId)
+          }));
+        })
         .subscribe();
     }
 

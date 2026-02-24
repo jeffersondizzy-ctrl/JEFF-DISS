@@ -16,34 +16,51 @@ interface ChatModuleProps {
   allUsers: UserAccount[];
 }
 
-const ChatModule: React.FC<ChatModuleProps> = ({ messages: propsMessages, onSendMessage, currentUser, currentUserUnit, allUsers }) => {
+const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, currentUser, currentUserUnit, allUsers }) => {
   const [activeChannel, setActiveChannel] = useState<'global' | 'unit' | 'private'>('global');
-  const [localMessages, setLocalMessages] = useState<ChatMessage[]>(propsMessages);
   const [targetUnit, setTargetUnit] = useState<string>(currentUserUnit);
   const [text, setText] = useState('');
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSidebar, setShowSidebar] = useState(false);
+  const [realtimeMessages, setRealtimeMessages] = useState<ChatMessage[]>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    setLocalMessages(propsMessages);
-  }, [propsMessages]);
-
+  // Realtime subscription for messages
   useEffect(() => {
     if (!supabase) return;
 
     const channel = supabase
-      .channel('messages_realtime')
-      .on('postgres_changes', { event: 'INSERT', table: 'mensagens' }, (payload) => {
-        const newMessage = payload.new as ChatMessage;
-        setLocalMessages(prev => {
-          if (prev.some(m => m.id === newMessage.id)) return prev;
-          return [...prev, newMessage];
-        });
-      })
+      .channel('messages')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', table: 'mensagens' },
+        (payload) => {
+          const newMessage = payload.new as ChatMessage;
+          setRealtimeMessages(prev => {
+            if (prev.some(m => m.id === newMessage.id)) return prev;
+            return [...prev, newMessage];
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', table: 'mensagens' },
+        (payload) => {
+          const updatedMessage = payload.new as ChatMessage;
+          setRealtimeMessages(prev => prev.map(m => m.id === updatedMessage.id ? updatedMessage : m));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', table: 'mensagens' },
+        (payload) => {
+          const deletedId = payload.old.id;
+          setRealtimeMessages(prev => prev.filter(m => m.id !== deletedId));
+        }
+      )
       .subscribe();
 
     return () => {
@@ -51,14 +68,22 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages: propsMessages, onSend
     };
   }, []);
 
+  // Merge props messages with realtime messages
+  const allMessages = useMemo(() => {
+    const combined = [...messages, ...realtimeMessages];
+    // Remove duplicates by ID and sort by timestamp
+    const unique = Array.from(new Map(combined.map(m => [m.id, m])).values());
+    return unique.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }, [messages, realtimeMessages]);
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [localMessages, activeChannel, selectedContact, targetUnit]);
+  }, [allMessages, activeChannel, selectedContact, targetUnit]);
 
   const filteredMessages = useMemo(() => {
-    return localMessages.filter(msg => {
+    return allMessages.filter(msg => {
       if (activeChannel === 'global') return msg.channel === 'global';
       if (activeChannel === 'unit') {
         // Mensagens do canal da unidade: ou a unidade é a autora, ou a unidade é a destinatária
