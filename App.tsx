@@ -1047,22 +1047,27 @@ const App: React.FC = () => {
 
     // Instant Supabase path
     if (supabase && isSupabaseConfigured) {
-      // Simplificando o envio para o banco de dados
+      // Simplificando o envio para o banco de dados conforme solicitado
+      // Enviando APENAS content e user_name para evitar erros de restrição de user_id
       const dbMessage = {
         content: text,
         user_name: currentUser || 'Anônimo'
       };
 
-      supabase.from('messages').insert([dbMessage]).then(({ error }) => {
+      console.log('Tentando enviar mensagem para Supabase:', dbMessage);
+
+      supabase.from('messages').insert([dbMessage]).then(({ error, data }) => {
         if (error) {
-          console.error('Supabase message insert error:', error);
-          alert('ERRO AO ENVIAR PARA SUPABASE: ' + error.message);
+          console.error('Erro detalhado no insert do Supabase:', error);
+          alert(`ERRO SUPABASE (${error.code}): ${error.message}\n\nVerifique se a tabela 'messages' possui as colunas 'content' e 'user_name'.`);
         } else {
-          console.log('Mensagem enviada com sucesso para o Supabase');
+          console.log('Mensagem gravada com sucesso no Supabase:', data);
         }
       });
-    } else if (!isSupabaseConfigured) {
-      console.warn('Supabase não configurado. Verifique as chaves VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY.');
+    } else {
+      if (!isSupabaseConfigured) {
+        console.warn('Supabase não configurado ou chaves inválidas.');
+      }
     }
 
     if (socketRef.current) {
