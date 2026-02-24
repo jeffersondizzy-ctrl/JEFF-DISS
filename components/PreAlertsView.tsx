@@ -58,6 +58,7 @@ const PreAlertsView: React.FC<PreAlertsViewProps> = ({ entries, unitTabs, onAddU
   const [newUnitPass, setNewUnitPass] = useState('');
   const [unlockError, setUnlockError] = useState(false);
   const [searchIsca, setSearchIsca] = useState('');
+  const [visibleCount, setVisibleCount] = useState(12);
 
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,7 +203,7 @@ const PreAlertsView: React.FC<PreAlertsViewProps> = ({ entries, unitTabs, onAddU
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-8">
-        {filteredEntries.map((entry) => {
+        {filteredEntries.slice(0, visibleCount).map((entry) => {
           const isUnread = !entry.readByUnits?.includes(activeUnit.name);
           
           return (
@@ -311,6 +312,17 @@ const PreAlertsView: React.FC<PreAlertsViewProps> = ({ entries, unitTabs, onAddU
             </div>
           );
         })}
+
+        {visibleCount < filteredEntries.length && (
+          <div className="col-span-full py-8 text-center">
+            <button 
+              onClick={() => setVisibleCount(prev => prev + 12)}
+              className="px-12 py-4 bg-roasted-gold/10 text-roasted-gold border border-roasted-gold/20 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-roasted-gold/20 transition-all"
+            >
+              Carregar mais trânsitos ({filteredEntries.length - visibleCount} restantes)
+            </button>
+          </div>
+        )}
 
         {filteredEntries.length === 0 && (
           <div className="col-span-full py-40 text-center opacity-20">

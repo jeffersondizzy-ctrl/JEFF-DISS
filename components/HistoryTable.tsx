@@ -14,6 +14,8 @@ interface HistoryTableProps {
 }
 
 const HistoryTable: React.FC<HistoryTableProps> = ({ entries, onSelect, onEdit }) => {
+  const [visibleCount, setVisibleCount] = React.useState(20);
+
   if (entries.length === 0) {
     return (
       <div className="p-32 text-center">
@@ -24,6 +26,9 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ entries, onSelect, onEdit }
       </div>
     );
   }
+
+  const visibleEntries = entries.slice(0, visibleCount);
+  const hasMore = visibleCount < entries.length;
 
   const getStatusStyle = (status: OperationStatus) => {
     switch (status) {
@@ -48,7 +53,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ entries, onSelect, onEdit }
           </tr>
         </thead>
         <tbody className="divide-y divide-white/5">
-          {entries.map((e, idx) => (
+          {visibleEntries.map((e, idx) => (
             <tr 
               key={e.id} 
               className="addictive-row bg-transparent"
@@ -117,6 +122,16 @@ const HistoryTable: React.FC<HistoryTableProps> = ({ entries, onSelect, onEdit }
           ))}
         </tbody>
       </table>
+      {hasMore && (
+        <div className="p-8 text-center">
+          <button 
+            onClick={() => setVisibleCount(prev => prev + 20)}
+            className="px-8 py-3 bg-[#64ffda]/10 text-[#64ffda] border border-[#64ffda]/20 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-[#64ffda]/20 transition-all"
+          >
+            Carregar mais registros ({entries.length - visibleCount} restantes)
+          </button>
+        </div>
+      )}
     </div>
   );
 };

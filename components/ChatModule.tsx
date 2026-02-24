@@ -6,6 +6,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { ChatMessage, City, CITIES, UserAccount } from '../types';
 import { SendIcon, GlobeIcon, DatabaseIcon, UserIcon, SearchIcon, XMarkIcon, ChevronRightIcon } from './icons';
+import { supabase } from '../supabaseClient';
 
 interface ChatModuleProps {
   messages: ChatMessage[];
@@ -15,8 +16,9 @@ interface ChatModuleProps {
   allUsers: UserAccount[];
 }
 
-const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, currentUser, currentUserUnit, allUsers }) => {
+const ChatModule: React.FC<ChatModuleProps> = ({ messages: propsMessages, onSendMessage, currentUser, currentUserUnit, allUsers }) => {
   const [activeChannel, setActiveChannel] = useState<'global' | 'unit' | 'private'>('global');
+  const [localMessages, setLocalMessages] = useState<ChatMessage[]>(propsMessages);
   const [targetUnit, setTargetUnit] = useState<string>(currentUserUnit);
   const [text, setText] = useState('');
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
@@ -27,13 +29,36 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setLocalMessages(propsMessages);
+  }, [propsMessages]);
+
+  useEffect(() => {
+    if (!supabase) return;
+
+    const channel = supabase
+      .channel('messages_realtime')
+      .on('postgres_changes', { event: 'INSERT', table: 'mensagens' }, (payload) => {
+        const newMessage = payload.new as ChatMessage;
+        setLocalMessages(prev => {
+          if (prev.some(m => m.id === newMessage.id)) return prev;
+          return [...prev, newMessage];
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, activeChannel, selectedContact, targetUnit]);
+  }, [localMessages, activeChannel, selectedContact, targetUnit]);
 
   const filteredMessages = useMemo(() => {
-    return messages.filter(msg => {
+    return localMessages.filter(msg => {
       if (activeChannel === 'global') return msg.channel === 'global';
       if (activeChannel === 'unit') {
         // Mensagens do canal da unidade: ou a unidade é a autora, ou a unidade é a destinatária
