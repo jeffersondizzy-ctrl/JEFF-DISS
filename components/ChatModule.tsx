@@ -25,7 +25,6 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
   const [searchQuery, setSearchQuery] = useState('');
   const [showSidebar, setShowSidebar] = useState(false);
   const [realtimeMessages, setRealtimeMessages] = useState<ChatMessage[]>([]);
-  const [isAuthorizedToDelete, setIsAuthorizedToDelete] = useState(false);
   
   const currentUserRef = useRef(currentUser);
   const currentUserUnitRef = useRef(currentUserUnit);
@@ -155,35 +154,6 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
     
     onSendMessage(text, activeChannel, recipient || undefined);
     setText('');
-  };
-
-  const handleAuthorizeDelete = () => {
-    const key = prompt('DIGITE A CHAVE MESTRA PARA GERENCIAMENTO:');
-    if (key === 'Gerenciamento*@2026') {
-      setIsAuthorizedToDelete(true);
-      alert('MODO DE GERENCIAMENTO ATIVADO: EXCLUSÃO LIBERADA.');
-    } else {
-      alert('CHAVE INCORRETA.');
-    }
-  };
-
-  const handleDeleteMessage = async (id: string) => {
-    if (!id) return;
-    if (!confirm('DESEJA REALMENTE APAGAR ESTA MENSAGEM?')) return;
-
-    if (supabase && isSupabaseConfigured) {
-      const { error } = await supabase.from('messages').delete().eq('id', id);
-      if (error) {
-        console.error('Erro ao deletar mensagem:', error);
-        alert('ERRO AO DELETAR: ' + error.message);
-      } else {
-        // A atualização virá via realtime, mas podemos filtrar localmente para feedback imediato
-        setRealtimeMessages(prev => prev.filter(m => m.id !== id));
-      }
-    } else {
-      // Fallback local se não houver supabase
-      setRealtimeMessages(prev => prev.filter(m => m.id !== id));
-    }
   };
 
   const selectUnitChannel = (unit: string) => {
@@ -354,25 +324,14 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {!isAuthorizedToDelete && (
-              <button 
-                onClick={handleAuthorizeDelete}
-                className="p-2 md:p-3 rounded-lg bg-white/5 text-white/20 hover:text-white/60 transition-all group"
-                title="Modo Gerenciamento"
-              >
-                <DatabaseIcon className="w-4 h-4 md:w-5 md:h-5" />
-              </button>
-            )}
-            {activeChannel === 'unit' && targetUnit !== currentUserUnit && (
-               <button 
-                onClick={() => selectUnitChannel(currentUserUnit)}
-                className="hidden md:block text-[9px] font-black text-white/30 hover:text-white uppercase border border-white/10 px-4 py-2 rounded-lg transition-all"
-               >
-                Voltar
-               </button>
-            )}
-          </div>
+          {activeChannel === 'unit' && targetUnit !== currentUserUnit && (
+             <button 
+              onClick={() => selectUnitChannel(currentUserUnit)}
+              className="hidden md:block text-[9px] font-black text-white/30 hover:text-white uppercase border border-white/10 px-4 py-2 rounded-lg transition-all"
+             >
+              Voltar
+             </button>
+          )}
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 md:p-10 space-y-6 md:space-y-8 custom-scrollbar">
@@ -389,15 +348,6 @@ const ChatModule: React.FC<ChatModuleProps> = ({ messages, onSendMessage, curren
               <div className="flex items-center gap-2 md:gap-3 mb-1.5 md:mb-2 px-1">
                 <span className="text-[9px] md:text-[10px] font-black text-[#64ffda] uppercase tracking-widest">{msg.author}</span>
                 <span className="text-[7px] md:text-[8px] text-white/20 font-black uppercase px-2 py-0.5 bg-white/5 rounded-full border border-white/5">{msg.authorUnit}</span>
-                {isAuthorizedToDelete && (
-                  <button 
-                    onClick={() => handleDeleteMessage(msg.id)}
-                    className="p-1 rounded-md hover:bg-red-500/20 text-red-500/40 hover:text-red-500 transition-all"
-                    title="Apagar Mensagem"
-                  >
-                    <TrashIcon className="w-3 h-3" />
-                  </button>
-                )}
               </div>
               <div className={`max-w-[85%] md:max-w-[75%] px-4 md:px-6 py-3 md:py-4 rounded-2xl md:rounded-[1.5rem] text-[12px] md:text-[13px] font-medium shadow-2xl border ${
                 msg.author === currentUser ? 
